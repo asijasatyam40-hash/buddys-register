@@ -1,0 +1,38 @@
+{
+  "name": "buddys-register",
+  "productName": "Buddy's Register",
+  "version": "1.0.0",
+  "description": "Buddy's Seafood Foodmart register",
+  "author": "Buddy's Seafood Foodmart",
+  "license": "UNLICENSED",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.buddys.register",
+    "productName": "Buddy's Register",
+    "artifactName": "Buddys-Register-Setup-${version}.${ext}",
+    "files": ["main.js", "preload.js", "printer.js", "app/**"],
+    "win": {
+      "target": ["nsis"],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Buddy's Register"
+    },
+    "publish": [{ "provider": "github", "releaseType": "release" }]
+  }
+}
