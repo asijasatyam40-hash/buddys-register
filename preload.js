@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('buddysHW', {
   drawer: () => ipcRenderer.invoke('hw:drawer'),
   setState: st => ipcRenderer.send('hw:state', st),
   installUpdate: () => ipcRenderer.invoke('hw:install-update'),
+  checkUpdates: () => ipcRenderer.invoke('hw:check-updates'),
   quit: () => ipcRenderer.invoke('hw:quit'),
   onUpdateReady: cb => ipcRenderer.on('hw:update-ready', (e, v) => cb(v)),
   onCloseBlocked: cb => ipcRenderer.on('hw:close-blocked', () => cb()),
