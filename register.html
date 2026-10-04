@@ -513,6 +513,7 @@ function buildCloudConfig(R) {
   const byOrder = (a, b) => (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(b.name);
   const depts = Object.values(R.depts).filter(d => d.active && d.show_key !== false).sort(byOrder)
     .map(d => ({ id: d.id, n: d.name, g: d.key_color || 'gen', tax: d.tax_category_id, ebt: d.ebt_eligible ? 1 : 0, age: d.min_age || 0 }));
+  const deptNames = {}; Object.values(R.depts).forEach(d => { deptNames[d.id] = d.name; });
   const cats = Object.values(R.cats).filter(c => c.active && !c.department_id).sort(byOrder).map(c => ({ id: c.id, n: c.name }));
   const codes = {}; Object.values(R.barcodes).forEach(b => { (codes[b.product_id] = codes[b.product_id] || []).push(b.barcode); });
   const items = [], codeIdx = {};
@@ -522,7 +523,7 @@ function buildCloudConfig(R) {
     let price = sp && sp.price != null ? sp.price : p.base_price;
     if (sp && sp.sale_price != null && (!sp.sale_starts_at || Date.parse(sp.sale_starts_at) <= now) && (!sp.sale_ends_at || Date.parse(sp.sale_ends_at) > now)) price = sp.sale_price;
     const list = (codes[p.id] || []).slice().sort();
-    const it = { id: p.id, c: list[0] || p.sku || p.id.slice(0, 8), codes: list, n: p.name, cat: p.category_id || '', p: cents(price), cost: cents(p.cost), tax: p.tax_category_id, ebt: p.ebt_eligible ? 1 : 0, age: p.min_age || 0, weight: p.sold_by_weight ? 1 : 0, quick: p.quick_key ? 1 : 0 };
+    const it = { id: p.id, c: list[0] || p.sku || p.id.slice(0, 8), codes: list, n: p.name, cat: p.category_id || '', dept: p.department_id || '', p: cents(price), cost: cents(p.cost), tax: p.tax_category_id, ebt: p.ebt_eligible ? 1 : 0, age: p.min_age || 0, weight: p.sold_by_weight ? 1 : 0, quick: p.quick_key ? 1 : 0 };
     items.push(it);
     [it.c, ...list].forEach(c => { codeIdx[c] = it; });
   });
@@ -532,7 +533,7 @@ function buildCloudConfig(R) {
   const receipt = (R.settings.receipt || {}).value || {};
   const st = R.store;
   return {
-    storeName: receipt.store_name || 'BUDDYS SEAFOOD FOODMART', footer: receipt.footer || 'THANK YOU!', tax, depts, cats, items, users, codeIdx,
+    storeName: receipt.store_name || 'BUDDYS SEAFOOD FOODMART', footer: receipt.footer || 'THANK YOU!', tax, depts, deptNames, cats, items, users, codeIdx,
     store: { town: st.name, addr: st.address || '', city: `${st.city || ''}${st.state ? ', ' + st.state : ''} ${st.zip || ''}`.trim(), phone: st.phone || '' },
   };
 }
@@ -566,6 +567,12 @@ async function cloudSync() {
       const sent = new Set(batch.map(b => b.key));
       S.outbox = S.outbox.filter(o => !sent.has(o.key) || batch.find(b => b.key === o.key) !== o);
       save();
+    }
+    while (S.reportOutbox && S.reportOutbox.length) {
+      const batch = S.reportOutbox.slice(0, 20);
+      await cloudCall('register_report_upload', { p_register: c.registerId, p_key: c.key, p_reports: batch });
+      const sentR = new Set(batch.map(b => b.key));
+      S.reportOutbox = S.reportOutbox.filter(o => !sentR.has(o.key)); save();
     }
     const before = c.version || 0;
     const ch = await cloudCall('register_catalog', { p_register: c.registerId, p_key: c.key, p_since: before });
@@ -925,7 +932,7 @@ function renderArea() {
       <div class="items">${list.map(p => `<button class="k item" data-act="item" data-code="${esc(p.c)}"><b>${esc(p.n)}</b><span>${p.weight ? money(p.p) + '/lb' : money(p.p)}<small>${esc(p.c)}</small></span></button>`).join('') || '<p class="muted">No items.</p>'}</div>`;
   } else {
     const C = [
-      ...(HW ? [['hardware', 'Hardware Setup', 'Printer, drawer, updates', 1], ['closeApp', 'Close Register', 'Shut the register app', 1]] : []), ['cloud', cloudOn() ? 'Cloud: Connected' : 'Connect to Cloud', cloudOn() ? 'Sync status, disconnect' : 'Get items from Back Office', 1], ['backOffice', 'Back Office', cloudOn() ? 'Now in the Back Office app' : 'Items, prices, departments, reports', 1], ['priceCheck', 'Price Check', 'Type or scan, then tap'], ['qtyChange', 'Change Qty', 'Selected line'],
+      ['reports', 'Reports', 'X, Z, department, shift', 1], ...(HW ? [['hardware', 'Hardware Setup', 'Printer, drawer, updates', 1], ['closeApp', 'Close Register', 'Shut the register app', 1]] : []), ['cloud', cloudOn() ? 'Cloud: Connected' : 'Connect to Cloud', cloudOn() ? 'Sync status, disconnect' : 'Get items from Back Office', 1], ['backOffice', 'Back Office', cloudOn() ? 'Now in the Back Office app' : 'Items, prices, departments, reports', 1], ['priceCheck', 'Price Check', 'Type or scan, then tap'], ['qtyChange', 'Change Qty', 'Selected line'],
       ['priceOverride', 'Price Change', 'Selected line', 1], ['itemDiscount', 'Item Discount', 'Selected line', 1],
       ['voidSale', 'Void Transaction', 'Whole ticket', 1], ['refund', 'Refund / Return', 'Find the receipt', 1],
       ['reprint', 'Reprint Receipt', 'Search old receipts'], ['cashDrop', 'Cash Drop', 'Drawer to safe'],
@@ -1032,7 +1039,7 @@ function dobPrompt(src, then) {
   });
 }
 function pushLine(src, q, price, extra = {}) {
-  const l = Object.assign({ lid: uid(), cat: src.cat || '', pid: src.c || 'D-' + src.id, name: src.n, qty: q, price, base: price, cost: src.cost || 0, tax: src.tax, ebt: !!src.ebt, age: src.age || 0, weight: false, override: false, disc: null, dept: false }, extra);
+  const l = Object.assign({ lid: uid(), cat: src.cat || '', deptId: extra.dept ? src.id : (src.dept || ''), deptName: extra.dept ? src.n : ((cfg().deptNames || {})[src.dept] || ''), pid: src.c || 'D-' + src.id, name: src.n, qty: q, price, base: price, cost: src.cost || 0, tax: src.tax, ebt: !!src.ebt, age: src.age || 0, weight: false, override: false, disc: null, dept: false }, extra);
   if (!l.weight && !l.dept && !l.override) {
     const same = cart.lines.find(x => x.pid === l.pid && !x.weight && !x.dept && !x.override && !x.disc && x.price === l.price);
     if (same) { same.qty += q; selected = same.lid; return done(); }
@@ -1142,9 +1149,9 @@ function finalize() {
       const share = r === ebtRows[ebtRows.length - 1] ? left : Math.round(c.forgiven * (c.eligTax ? r.tax / c.eligTax : 0));
       const take = Math.min(share, r.tax, left); charged = r.tax - take; left -= take;
     }
-    return { lid: r.l.lid, pid: r.l.pid, cat: r.l.cat, name: r.l.name, qty: r.l.qty, price: r.l.price, base: r.l.base, weight: r.l.weight, dept: r.l.dept, gross: r.gross, disc: r.disc + r.alloc, net: r.net, tax: r.tax, chargedTax: charged, ebt: r.l.ebt, cost: r.l.cost, refunded: false };
+    return { lid: r.l.lid, pid: r.l.pid, cat: r.l.cat, name: r.l.name, qty: r.l.qty, price: r.l.price, base: r.l.base, weight: r.l.weight, dept: r.l.dept, deptId: r.l.deptId || '', deptName: r.l.deptName || '', taxName: taxOf(r.l.tax).name, gross: r.gross, disc: r.disc + r.alloc, net: r.net, tax: r.tax, chargedTax: charged, ebt: r.l.ebt, cost: r.l.cost, refunded: false };
   });
-  const sale = { key: `${regKey()}-${trans}-${uid()}`, trans, at: Date.now(), store: S.store, reg: S.reg, cashier: user.name, lines, gross: c.gross, discount: c.discount, subtotal: c.subtotal, tax: c.tax, forgiven: c.forgiven, total: c.total,
+  const sale = { key: `${regKey()}-${trans}-${uid()}`, trans, at: Date.now(), store: S.store, reg: S.reg, cashier: user.name, cashierId: user.id, drawerId: d ? d.id : null, shiftId: S.shift ? S.shift.id : null, lines, gross: c.gross, discount: c.discount, subtotal: c.subtotal, tax: c.tax, forgiven: c.forgiven, total: c.total,
     payments: payments.map(p => ({ ...p })), change: sum(payments, p => p.change || 0), refunds: [], status: 'done' };
   S.sales.push(sale); queueSale(sale); if (S.sales.length > 3000) S.sales.splice(0, S.sales.length - 3000);
   if (d) { payments.forEach(p => { d.tot[p.type] = (d.tot[p.type] || 0) + p.amount; }); d.sales++; }
@@ -1359,19 +1366,19 @@ function closeDrawer(ap) {
   numberPrompt({
     title: 'End of day · count the drawer', sub: 'Count all the cash in the drawer and enter the total.', mode: 'money', okLabel: 'Close drawer',
     onOk: counted => {
-      const exp = expected(d), diff = counted - exp, card = cardTot(d.tot);
-      S.closings.push({ ...d, closedAt: Date.now(), closedBy: ap.name, counted, expected: exp, overShort: diff, store: S.store, reg: S.reg });
+      const end = Date.now();
+      S.zSeq = S.zSeq || {}; const zNo = (S.zSeq[regKey()] || 0) + 1; S.zSeq[regKey()] = zNo;
+      const slip = drawerSlip(d, end, 'z', zNo, counted), exp = slip.expected, diff = counted - exp;
+      const rec = { key: `${S.store}-${S.reg}-Z-${String(zNo).padStart(4, '0')}-${d.id}`, kind: 'z', zNo, start: d.openedAt, end, cashier: ap.name, store: S.store, reg: S.reg,
+        total: slip.R.total / 100, R: slip.R, acts: slip.acts, text: slip.text,
+        drawer: { opening: d.opening, cash: d.tot.cash || 0, cashRefunds: d.ref.cash || 0, drops: d.drops, payouts: d.payouts, adds: d.adds, expected: exp, counted, overShort: diff } };
+      S.zReports = (S.zReports || []).concat(rec).slice(-400); queueReport(rec);
+      S.closings.push({ ...d, closedAt: end, closedBy: ap.name, counted, expected: exp, overShort: diff, store: S.store, reg: S.reg, zNo });
       delete S.drawers[regKey()];
-      audit('drawer.close', `Expected ${money(exp)} counted ${money(counted)} ${diff >= 0 ? 'over' : 'short'} ${money(Math.abs(diff))}`, ap); save();
-      const o = head(S.store, S.reg, Date.now(), ['END OF DAY - DRAWER CLOSE', `Closed by: ${ap.name}`]);
-      o.push(lr('Started', fmtDT(d.openedAt)), lr('Sales', String(d.sales)), '', lr('Starting cash', money(d.opening)), lr('Cash sales', money(d.tot.cash || 0)), lr('Cash returns', neg(d.ref.cash || 0)),
-        lr('Cash drops', neg(d.drops)), lr('Paid outs', neg(d.payouts)), lr('Cash added', money(d.adds)), dash, lr('Expected cash', money(exp)), lr('Counted cash', money(counted)),
-        lr(diff >= 0 ? 'OVER' : 'SHORT', money(Math.abs(diff))), dash, lr('Card terminal', money(card)),
-        lr('EBT Food', money(d.tot.ebt || 0)), lr('Card returns', neg(cardTot(d.ref))), lr('EBT returns', neg(d.ref.ebt || 0)), lr('No sales', String(d.noSales)), '',
-        'Check Card and EBT totals against', "the card terminal's end-of-day report.");
-      openModal({ title: diff === 0 ? 'Drawer balanced' : diff > 0 ? `Over ${money(diff)}` : `Short ${money(-diff)}`, wide: true, closable: false,
-        body: `<div class="receipt-wrap"><pre class="receipt">${esc(o.join('\n'))}</pre></div><div class="m-actions">${HW ? '<button class="k" data-m="print">Print report</button>' : ''}<button class="k primary" data-m="out">Sign out</button></div>`,
-        enter: 'out', actions: { print: () => hwPrint(o.join('\n')), out: () => { closeModal(); signOut(true); } } });
+      audit('drawer.close', `Z #${zNo}: expected ${money(exp)} counted ${money(counted)} ${diff >= 0 ? 'over' : 'short'} ${money(Math.abs(diff))}`, ap); save();
+      openModal({ title: `Z #${String(zNo).padStart(4, '0')} · ${diff === 0 ? 'Drawer balanced' : diff > 0 ? `Over ${money(diff)}` : `Short ${money(-diff)}`}`, wide: true, closable: false,
+        body: `<div class="receipt-wrap"><pre class="receipt">${esc(slip.text)}</pre></div><div class="m-actions">${HW ? '<button class="k" data-m="print">Print Z report</button>' : ''}<button class="k primary" data-m="out">Sign out</button></div>`,
+        enter: 'out', actions: { print: () => hwPrint(slip.text), out: () => { closeModal(); signOut(true); } } });
     },
   });
 }
@@ -1401,6 +1408,7 @@ function setup(ap) {
     } });
 }
 const CMD = {
+  reports: () => requirePerm('reports', 'Reports', reportsMenu),
   hardware: () => requirePerm('settings', 'Hardware setup', hardwareSetup),
   closeApp: () => requirePerm('drawer.close', 'Closing the register', () => {
     if (cart.lines.length || payments.length) return toast('Finish, hold or void the ticket first.');
@@ -1786,6 +1794,205 @@ const ADM = {
     buttons: [{ label: 'Keep my setup' }, { label: 'Reset', cls: 'danger', run: () => { S.config = DEFAULTS(); audit('setup.reset', 'Setup reset to samples', aUser); save(); closeAdmin(); signOut(true); } }] }),
 };
 
+/* ================= reports: shift (cashier out), X, Z, department ================= */
+const tenderKey = t => (t === 'cash' ? 'cash' : t === 'ebt' ? 'ebt' : 'card');
+const fmtQty = q => (Number.isInteger(q) ? String(q) : q.toFixed(2));
+function lineDept(l) {
+  if (l.deptName) return l.deptName;
+  const c = l.cat && cats().find(x => x[0] === l.cat);
+  return c ? c[1] : 'Other';
+}
+function computeReport(sales, refunds) {
+  const R = { count: sales.length, items: 0, gross: 0, discount: 0, net: 0, tax: 0, forgiven: 0, total: 0, change: 0,
+    tenders: { cash: 0, card: 0, ebt: 0 }, depts: {}, taxes: {}, cashiers: {}, hours: {},
+    refunds: { count: refunds.length, amount: 0, cash: 0, card: 0, ebt: 0 } };
+  for (const s of sales) {
+    R.gross += s.gross; R.discount += s.discount; R.net += s.subtotal; R.tax += s.tax; R.forgiven += s.forgiven; R.total += s.total; R.change += s.change || 0;
+    s.payments.forEach(p => { R.tenders[tenderKey(p.type)] += p.amount; });
+    const c = R.cashiers[s.cashier] || (R.cashiers[s.cashier] = { count: 0, total: 0 }); c.count++; c.total += s.total;
+    const hr = new Date(s.at).getHours(); const h = R.hours[hr] || (R.hours[hr] = { count: 0, total: 0 }); h.count++; h.total += s.total;
+    for (const l of s.lines) {
+      const q = l.weight ? 1 : l.qty; R.items += q;
+      const dn = lineDept(l), d = R.depts[dn] || (R.depts[dn] = { qty: 0, net: 0, tax: 0, ebt: 0 });
+      const lt = l.chargedTax != null ? l.chargedTax : l.tax;
+      d.qty += q; d.net += l.net; d.tax += lt; if (l.ebt) d.ebt += l.net;
+      const tn = l.taxName || 'Tax', t = R.taxes[tn] || (R.taxes[tn] = { taxable: 0, tax: 0 }); t.taxable += l.net; t.tax += lt;
+    }
+  }
+  refunds.forEach(r => { R.refunds.amount += r.amount; R.refunds[tenderKey(r.method)] += r.amount; });
+  return R;
+}
+function refundsIn(from, to, who) {
+  const out = [];
+  S.sales.forEach(s => (s.refunds || []).forEach(r => { if (r.at >= from && r.at < to && (!who || r.by === who)) out.push(r); }));
+  return out;
+}
+function countActs(from, to, who) {
+  const a = S.audit.filter(x => x.store === S.store && x.reg === S.reg && x.at >= from && x.at < to && (!who || x.user === who));
+  const n = k => a.filter(x => x.action === k).length;
+  return { voidItems: n('void.item'), voidSales: n('void.sale'), noSales: n('drawer.no_sale'), priceOverrides: n('price.override'), discounts: n('discount'), refunds: n('refund') };
+}
+function reportBody(R, acts) {
+  const o = [lr('Transactions', String(R.count)), lr('Items sold', fmtQty(R.items)), lr('Gross sales', money(R.gross))];
+  if (R.discount) o.push(lr('Discounts', neg(R.discount)));
+  o.push(lr('Net sales', money(R.net)), lr('Tax', money(R.tax)));
+  if (R.forgiven) o.push(lr('EBT tax exempt', neg(R.forgiven)));
+  o.push(lr('TOTAL TAKEN IN', money(R.total)), lr('Average sale', money(R.count ? Math.round(R.total / R.count) : 0)), dash,
+    'PAYMENTS', lr('  Cash', money(R.tenders.cash)), lr('  Card terminal', money(R.tenders.card)), lr('  EBT Food', money(R.tenders.ebt)), dash,
+    lr(`RETURNS (${R.refunds.count})`, neg(R.refunds.amount)));
+  if (R.refunds.cash) o.push(lr('  Cash back', neg(R.refunds.cash)));
+  if (R.refunds.card) o.push(lr('  Card terminal', neg(R.refunds.card)));
+  if (R.refunds.ebt) o.push(lr('  EBT Food', neg(R.refunds.ebt)));
+  o.push(lr('NET AFTER RETURNS', money(R.total - R.refunds.amount)), dash);
+  if (acts) o.push(lr('Voided items', String(acts.voidItems)), lr('Voided tickets', String(acts.voidSales)), lr('No sales (drawer)', String(acts.noSales)),
+    lr('Price changes', String(acts.priceOverrides)), lr('Discounts', String(acts.discounts)), dash);
+  o.push('DEPARTMENTS', ...deptRows(R), dash);
+  return o;
+}
+function deptRows(R) {
+  const rows = Object.entries(R.depts).sort((a, b) => b[1].net - a[1].net);
+  if (!rows.length) return ['  No sales'];
+  return rows.map(([n, d]) => lr(`  ${n.slice(0, W - 22)} x${fmtQty(d.qty)}`, money(d.net)));
+}
+function taxRows(R) {
+  const rows = Object.entries(R.taxes);
+  return rows.length ? rows.map(([n, t]) => lr(`  ${n.slice(0, W - 24)} on ${money(t.taxable)}`, money(t.tax))) : ['  No tax'];
+}
+const sigLines = who => ['', `${who} signature:`, '', '______________________________'];
+
+/* ----- shifts: one per sign-in ----- */
+function startShift() {
+  if (S.shift && !S.shift.end && S.shift.userId === user.id && S.shift.reg === S.reg && S.shift.store === S.store) return;
+  if (S.shift && !S.shift.end) closeShift(true);
+  S.shift = { id: uid(), userId: user.id, cashier: user.name, store: S.store, reg: S.reg, start: Date.now() };
+  save();
+}
+function shiftSlip(sh, end, live) {
+  const sales = S.sales.filter(s => s.shiftId === sh.id);
+  const R = computeReport(sales, refundsIn(sh.start, end, sh.cashier));
+  const acts = countActs(sh.start, end, sh.cashier);
+  const o = head(sh.store, sh.reg, end, ['SHIFT REPORT - CASHIER OUT', `Cashier: ${sh.cashier}`]);
+  o.push(lr('Started', fmtDT(sh.start)), lr(live ? 'So far, at' : 'Ended', fmtDT(end)), dash, ...reportBody(R, acts), ...sigLines('Cashier'));
+  return { R, acts, text: o.join('\n') };
+}
+function closeShift(silent) {
+  const sh = S.shift; if (!sh || sh.end) return null;
+  sh.end = Date.now();
+  const { R, acts, text } = shiftSlip(sh, sh.end);
+  const rec = { key: `${S.store}-${sh.reg}-S-${sh.id}`, kind: 'shift', start: sh.start, end: sh.end, cashier: sh.cashier, store: sh.store, reg: sh.reg, total: R.total / 100, R, acts, text };
+  S.shiftReports = (S.shiftReports || []).concat(rec).slice(-300);
+  if (R.count || R.refunds.count || acts.voidSales || acts.noSales) queueReport(rec);
+  audit('shift.close', `${sh.cashier}: ${R.count} sales ${money(R.total)}${silent ? ' (auto)' : ''}`);
+  S.shift = null; save();
+  return rec;
+}
+function cashierOut() {
+  if (cart.lines.length || payments.length) return toast('Finish, hold or void the ticket first.');
+  if (!S.shift) return signOut();
+  const { text } = shiftSlip(S.shift, Date.now());
+  openModal({
+    title: `Cashier out · ${user.name}`, wide: true,
+    body: `<div class="receipt-wrap"><pre class="receipt">${esc(text)}</pre></div>
+      <div class="m-actions"><button class="k" data-m="cancel">Cancel</button><button class="k" data-m="out">Sign out</button>${HW ? '<button class="k primary" data-m="printOut">Print slip & sign out</button>' : ''}</div>`,
+    enter: HW ? 'printOut' : 'out',
+    actions: {
+      cancel: closeModal,
+      out: () => { closeModal(); closeShift(); signOut(true); },
+      printOut: () => { const rec = closeShift(); if (rec) hwPrint(rec.text); closeModal(); signOut(true); },
+    },
+  });
+}
+
+/* ----- X and Z ----- */
+function drawerSlip(d, end, kind, zNo, counted) {
+  const sales = S.sales.filter(s => s.drawerId === d.id);
+  const R = computeReport(sales, refundsIn(d.openedAt, end));
+  const acts = countActs(d.openedAt, end);
+  const exp = expected(d);
+  const title = kind === 'z' ? `Z REPORT #${String(zNo).padStart(4, '0')} - END OF DAY` : 'X REPORT - SO FAR (NOT CLOSED)';
+  const o = head(S.store, S.reg, end, [title]);
+  o.push(lr('Drawer opened', fmtDT(d.openedAt)), lr(kind === 'z' ? 'Closed' : 'Printed', fmtDT(end)), dash, ...reportBody(R, acts),
+    'TAX BY TYPE', ...taxRows(R), dash,
+    'CASHIERS', ...(Object.entries(R.cashiers).map(([n, c]) => lr(`  ${n.slice(0, W - 24)} (${c.count})`, money(c.total)))), ...(Object.keys(R.cashiers).length ? [] : ['  None']), dash,
+    'CASH DRAWER', lr('  Starting cash', money(d.opening)), lr('  Cash sales', money(d.tot.cash || 0)), lr('  Cash returns', neg(d.ref.cash || 0)),
+    lr('  Cash drops', neg(d.drops)), lr('  Paid outs', neg(d.payouts)), lr('  Cash added', money(d.adds)), lr('  Expected in drawer', money(exp)));
+  if (kind === 'z') {
+    const diff = counted - exp;
+    o.push(lr('  Counted', money(counted)), lr(diff === 0 ? '  BALANCED' : diff > 0 ? '  OVER' : '  SHORT', money(Math.abs(diff))));
+  }
+  o.push(dash, 'Check Card and EBT totals against', "the card terminal's end-of-day report.");
+  if (kind === 'z') o.push(...sigLines('Manager'));
+  return { R, acts, text: o.join('\n'), expected: exp };
+}
+function showSlip(title, text, back) {
+  openModal({
+    title, wide: true,
+    body: `<div class="receipt-wrap"><pre class="receipt">${esc(text)}</pre></div>
+      <div class="m-actions">${back ? '<button class="k" data-m="back">Back</button>' : ''}${HW ? '<button class="k" data-m="print">Print</button>' : ''}<button class="k primary" data-m="close">Close</button></div>`,
+    enter: 'close',
+    actions: { close: closeModal, back: () => back && back(), print: () => { hwPrint(text); toast('Printing.'); } },
+  });
+}
+function deptReport(period) {
+  const now = Date.now(), d = drawer();
+  const day0 = new Date(); day0.setHours(0, 0, 0, 0);
+  const ranges = {
+    drawer: [d ? d.openedAt : day0.getTime(), now, d ? 'Since the drawer opened' : 'Today'],
+    today: [day0.getTime(), now, 'Today'],
+    yesterday: [day0.getTime() - 86400000, day0.getTime(), 'Yesterday'],
+  };
+  const [from, to, label] = ranges[period] || ranges.drawer;
+  const sales = S.sales.filter(s => s.store === S.store && s.reg === S.reg && s.at >= from && s.at < to);
+  const R = computeReport(sales, refundsIn(from, to));
+  const o = head(S.store, S.reg, now, ['DEPARTMENT REPORT', label]);
+  o.push(lr('From', fmtDT(from)), lr('To', fmtDT(to)), dash, lr('DEPARTMENT  (qty)', 'SALES'));
+  Object.entries(R.depts).sort((a, b) => b[1].net - a[1].net).forEach(([n, x]) => {
+    o.push(lr(`${n.slice(0, W - 20)} (${fmtQty(x.qty)})`, money(x.net)));
+    if (x.ebt || x.tax) o.push(lr(`   tax ${money(x.tax)}${x.ebt ? ` · EBT ${money(x.ebt)}` : ''}`, ''));
+  });
+  if (!Object.keys(R.depts).length) o.push('  No sales');
+  o.push(dash, lr('Net sales', money(R.net)), lr('Tax', money(R.tax - R.forgiven)), lr('TOTAL', money(R.total)), lr(`Returns (${R.refunds.count})`, neg(R.refunds.amount)), dash, 'TAX BY TYPE', ...taxRows(R));
+  return o.join('\n');
+}
+function reportsMenu() {
+  const d = drawer();
+  openModal({
+    title: 'Reports', wide: true,
+    body: `<div class="picklist">
+      <button class="pick" data-m="x"><span>X Report<small>Totals so far for this drawer. Does not close anything.</small></span></button>
+      <button class="pick" data-m="dept" data-p="drawer"><span>Department Report<small>Sales by department since the drawer opened</small></span></button>
+      <button class="pick" data-m="dept" data-p="today"><span>Department Report · Today</span></button>
+      <button class="pick" data-m="dept" data-p="yesterday"><span>Department Report · Yesterday</span></button>
+      <button class="pick" data-m="shift"><span>Current Shift<small>${S.shift ? `${esc(S.shift.cashier)}, since ${fmtT(S.shift.start)}` : 'No open shift'}</small></span></button>
+      <button class="pick" data-m="pastShifts"><span>Past Shift Reports<small>Cashier-out slips</small></span></button>
+      <button class="pick" data-m="pastZ"><span>Past Z Reports<small>End-of-day reports</small></span></button>
+      <button class="pick" data-m="endDay"><span>End of Day (Z Report)<small>Count the drawer and close the day${d ? '' : ' · no drawer open'}</small></span></button></div>
+      <div class="m-actions"><button class="k primary" data-m="close">Close</button></div>`,
+    actions: {
+      close: closeModal,
+      x: () => { const dd = drawer(); if (!dd) return toast('No drawer is open.'); showSlip('X Report', drawerSlip(dd, Date.now(), 'x').text, reportsMenu); },
+      dept: el => showSlip('Department Report', deptReport(el.dataset.p), reportsMenu),
+      shift: () => { if (!S.shift) return toast('No open shift.'); showSlip('Current shift', shiftSlip(S.shift, Date.now(), true).text, reportsMenu); },
+      pastShifts: () => pastList('Past shift reports', (S.shiftReports || []).filter(r => r.store === S.store), r => `${r.cashier} · ${fmtDT(r.start)} – ${fmtT(r.end)}`),
+      pastZ: () => pastList('Past Z reports', (S.zReports || []).filter(r => r.store === S.store), r => `Z #${String(r.zNo).padStart(4, '0')} · ${fmtDT(r.end)}`),
+      endDay: () => { closeModal(); CMD.closeDrawer(); },
+    },
+  });
+}
+function pastList(title, list, label) {
+  const rows = list.slice(-60).reverse();
+  openModal({
+    title, wide: true,
+    body: `<div class="picklist">${rows.map((r, i) => `<button class="pick" data-m="open" data-i="${i}"><span>${esc(label(r))}</span><b>${money(Math.round(r.total * 100))}</b></button>`).join('') || '<p class="muted">None yet.</p>'}</div>
+      <div class="m-actions"><button class="k" data-m="back">Back</button></div>`,
+    actions: { back: reportsMenu, open: el => { const r = rows[+el.dataset.i]; showSlip(title.replace('Past ', '').replace(/s$/, ''), r.text, () => pastList(title, list, label)); } },
+  });
+}
+function queueReport(rec) {
+  if (!cloudOn()) return;
+  S.reportOutbox = (S.reportOutbox || []).filter(o => o.key !== rec.key).concat(rec);
+}
+
 /* ================= sign in / out ================= */
 function showLock() {
   makePad('lock', 'pin', '');
@@ -1799,11 +2006,12 @@ function showLock() {
 function signIn() {
   const u = userByPin(pads.lock.d);
   if (!u) { pads.lock.d = ''; drawPad('lock'); $('#lockErr').textContent = 'PIN not recognized.'; return; }
-  user = u; delete pads.lock; $('#lock').hidden = true; audit('sign.in', `${u.name} signed in`); render();
+  user = u; delete pads.lock; $('#lock').hidden = true; audit('sign.in', `${u.name} signed in`); startShift(); render();
   if (!drawer()) startDrawer();
 }
 function signOut(force) {
   if (!force && (cart.lines.length || payments.length)) return toast('Finish, hold or void the ticket first.');
+  if (S.shift && !S.shift.end && user) closeShift(true);
   if (user) audit('sign.out', `${user.name} signed out`);
   user = null; cart = newCart(); payments = []; selected = null; mode = 'sell'; buf = ''; qty = 1;
   $('#overlay').hidden = true; modalCfg = null; render(); showLock();
@@ -1824,7 +2032,7 @@ const ACT = {
   customer: () => toast('Customer accounts and loyalty come in a later phase.'),
   openDrawer: () => requirePerm('drawer.no_sale', 'Open drawer (no sale)', ap => { const d = drawer(); if (d) d.noSales++; audit('drawer.no_sale', 'Drawer opened, no sale', ap); save(); hwDrawer(); toast('Drawer opened · logged as No Sale.'); }),
   allDiscount: () => requirePerm('discount', 'All discount', ap => discountModal('sale', ap)),
-  exit: () => signOut(),
+  exit: cashierOut,
   pay: startPay,
   cancelPay: () => { if (payments.length) return; mode = 'sell'; buf = ''; render(); },
   cashQuick: el => payCash(+el.dataset.v),
