@@ -21,10 +21,18 @@
     "appId": "com.buddys.register",
     "productName": "Buddy's Register",
     "artifactName": "Buddys-Register-Setup-${version}.${ext}",
-    "files": ["main.js", "preload.js", "printer.js", "app/**"],
+    "files": [
+      "main.js",
+      "preload.js",
+      "printer.js",
+      "register.html",
+      "icon.ico"
+    ],
     "win": {
-      "target": ["nsis"],
-      "icon": "build/icon.ico"
+      "target": [
+        "nsis"
+      ],
+      "icon": "icon.ico"
     },
     "nsis": {
       "oneClick": true,
@@ -33,6 +41,11 @@
       "createDesktopShortcut": true,
       "shortcutName": "Buddy's Register"
     },
-    "publish": [{ "provider": "github", "releaseType": "release" }]
+    "publish": [
+      {
+        "provider": "github",
+        "releaseType": "release"
+      }
+    ]
   }
 }

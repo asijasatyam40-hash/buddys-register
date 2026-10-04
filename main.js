@@ -31,11 +31,11 @@ function createWindow() {
     width: 1024, height: 768, minWidth: 800, minHeight: 600,
     fullscreen: !!settings.kiosk, kiosk: !!settings.kiosk,
     autoHideMenuBar: true, backgroundColor: '#13253b', title: "Buddy's Register",
-    icon: path.join(__dirname, 'build', 'icon.ico'),
+    icon: path.join(__dirname, 'icon.ico'),
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, spellcheck: false },
   });
   Menu.setApplicationMenu(null);
-  win.loadFile(path.join(__dirname, 'app', 'register.html'));
+  win.loadFile(path.join(__dirname, 'register.html'));
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', e => e.preventDefault());
   win.on('close', e => {

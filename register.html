@@ -1,0 +1,1896 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Buddy's Register</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout follows the store's current EBSPOS screen: ticket on the left, department keys + number pad
+   on the right, command bar and PAY along the bottom, status line at the very bottom.
+   Department keys are color-coded: green = EBT food, orange = hot / prepared, rose = ID check, blue = everything else. */
+:root {
+  --bar: #13253b; --bar-2: #21395a; --bar-ink: #eaf0f7; --bar-muted: #9db0c6;
+  --bg: #dde4ec; --panel: #ffffff; --panel-2: #f2f5f8; --ink: #111c2a; --muted: #586a7f; --line: #d1dae4;
+  --key: #ffffff; --key-edge: #b7c3d1; --key-ink: #15202e;
+  --food-bg: #ddf2e5; --food-ink: #0b5332; --food-edge: #97cfae;
+  --hot-bg: #fde6d6; --hot-ink: #93360a; --hot-edge: #efb48a;
+  --age-bg: #f6e0e6; --age-ink: #841838; --age-edge: #dea1b3;
+  --gen-bg: #e2eaf6; --gen-ink: #1b3b68; --gen-edge: #a6bcdc;
+  --red: #c4161c; --green: #137a3a; --teal: #0b8183; --dark: #24344a;
+  --cash: #137a3a; --card: #1c4d8f; --ebt: #5a2a90; --on: #ffffff;
+  --sel: #fff0b3; --sel-edge: #d9a400;
+  --font-ui: 'Barlow', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-key: 'Barlow Condensed', 'Arial Narrow', 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, Consolas, monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.3 var(--font-ui); -webkit-tap-highlight-color: transparent; user-select: none; }
+button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
+input, select { user-select: text; }
+.num { font-variant-numeric: tabular-nums; }
+
+#app { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+
+/* ---------- top bar ---------- */
+.topbar { background: var(--bar); display: flex; align-items: center; gap: 10px; padding: 8px 10px; flex-wrap: wrap; }
+.entry { flex: 1 1 260px; min-width: 0; height: 46px; display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 8px; padding: 0 12px; border: 2px solid #fff; }
+.entry.active { border-color: var(--sel-edge); }
+.entry .gt { color: var(--muted); font: 700 20px var(--font-mono); }
+.entry .buf { flex: 1; min-width: 0; font: 600 24px var(--font-mono); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.entry .buf.ph { font: 500 16px var(--font-ui); color: var(--muted); }
+.entry .preview { font: 700 22px var(--font-key); color: var(--green); font-variant-numeric: tabular-nums; }
+.qtybox { display: flex; align-items: center; gap: 8px; color: var(--bar-ink); font-weight: 600; }
+.qtybox span { min-width: 54px; height: 46px; display: grid; place-items: center; background: #fff; color: var(--ink); border-radius: 8px; font: 700 26px var(--font-key); padding: 0 8px; }
+.qtybox span.on { background: var(--sel); box-shadow: inset 0 0 0 2px var(--sel-edge); }
+.tabs { display: flex; gap: 6px; margin-left: auto; }
+.tab { height: 46px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--bar-2); background: var(--bar-2); color: var(--bar-ink); font: 600 17px var(--font-key); letter-spacing: .03em; text-transform: uppercase; }
+.tab[aria-pressed="true"] { background: #fff; color: var(--ink); border-color: #fff; }
+
+/* ---------- work area ---------- */
+.work { display: grid; grid-template-columns: minmax(0, 46fr) minmax(0, 54fr); gap: 10px; padding: 10px; min-height: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+/* ticket */
+.thead, .trow { display: grid; grid-template-columns: minmax(0, 1fr) 54px 78px 88px; gap: 6px; align-items: baseline; }
+.thead { padding: 8px 14px; background: var(--panel-2); border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.thead span:not(:first-child), .trow > span:not(:first-child) { text-align: right; }
+.tlist { flex: 1; min-height: 0; overflow: auto; }
+.trow { padding: 9px 14px; border-bottom: 1px solid var(--line); cursor: pointer; font-variant-numeric: tabular-nums; }
+.trow.sel { background: var(--sel); box-shadow: inset 4px 0 0 var(--sel-edge); }
+.trow .nm { font-weight: 600; overflow-wrap: anywhere; }
+.trow .amt { font: 700 19px var(--font-key); }
+.trow .sub { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; color: var(--muted); font-size: 13px; }
+.trow .sub .disc { color: var(--red); font-weight: 600; }
+.tag { display: inline-block; font-style: normal; font-size: 10.5px; font-weight: 700; padding: 1px 5px; border-radius: 4px; letter-spacing: .05em; text-transform: uppercase; }
+.tag.ebt { background: var(--food-bg); color: var(--food-ink); }
+.tag.age { background: var(--age-bg); color: var(--age-ink); }
+.tag.hot { background: var(--hot-bg); color: var(--hot-ink); }
+.tag.ovr { background: #fbefd5; color: #7a4a00; }
+.tempty { flex: 1; display: grid; place-content: center; text-align: center; gap: 6px; color: var(--muted); padding: 24px; }
+.tempty b { color: var(--ink); font: 700 26px var(--font-key); letter-spacing: .02em; }
+.last { flex: 1; display: grid; align-content: center; gap: 4px; padding: 16px 28px; }
+.last .lr { display: grid; grid-template-columns: 1fr auto; align-items: baseline; font: 700 clamp(30px, 4.6vw, 58px)/1.15 var(--font-key); font-variant-numeric: tabular-nums; }
+.last .lr span:first-child { font-size: .72em; }
+.last .lr.chg { color: var(--red); }
+.last .meta { color: var(--muted); margin-top: 10px; font-size: 14px; }
+.tfoot { border-top: 2px solid var(--line); padding: 10px 14px; display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; align-items: end; font-variant-numeric: tabular-nums; }
+.tfoot .tq { color: var(--muted); font-weight: 600; align-self: end; }
+.tfoot dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 2px 16px; justify-self: end; min-width: 220px; }
+.tfoot dt { text-align: right; color: var(--muted); font-weight: 600; }
+.tfoot dd { margin: 0; text-align: right; font-weight: 600; }
+.tfoot .minus { color: var(--red); }
+.tfoot .tot { font: 700 32px/1.1 var(--font-key); color: var(--red); }
+.tfoot .due { font: 700 24px/1.1 var(--font-key); color: var(--ink); }
+
+/* right side */
+.right { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 10px; min-height: 0; min-width: 0; }
+.keys { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); gap: 10px; min-height: 0; }
+.keys.tendering { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); }
+.keys.tendering .numpad .k { font-size: 28px; }
+.area { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+
+.k { border-radius: 10px; border: 1px solid var(--key-edge); background: var(--key); color: var(--key-ink); font: 600 17px/1.1 var(--font-key); letter-spacing: .02em; box-shadow: inset 0 -3px 0 rgb(17 32 52 / .11), 0 1px 1px rgb(17 32 52 / .06); padding: 4px 8px; min-height: 44px; }
+.k:active:not(:disabled) { transform: translateY(1px); box-shadow: inset 0 2px 4px rgb(0 0 0 / .14); }
+.k:disabled { opacity: .4; cursor: not-allowed; }
+.k:focus-visible, .tab:focus-visible, .trow:focus-visible, .pick:focus-visible { outline: 3px solid var(--sel-edge); outline-offset: 2px; }
+
+.depts { flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: minmax(48px, 1fr); gap: 7px; }
+.dept { display: flex; flex-direction: column; justify-content: center; align-items: flex-start; text-align: left; padding: 6px 10px; gap: 2px; }
+.dept b { font: 700 17px/1.05 var(--font-key); letter-spacing: .02em; }
+.dept small { font: 600 11px var(--font-ui); letter-spacing: .05em; text-transform: uppercase; opacity: .8; }
+.dept.food { background: var(--food-bg); color: var(--food-ink); border-color: var(--food-edge); }
+.dept.hot { background: var(--hot-bg); color: var(--hot-ink); border-color: var(--hot-edge); }
+.dept.age { background: var(--age-bg); color: var(--age-ink); border-color: var(--age-edge); }
+.dept.gen { background: var(--gen-bg); color: var(--gen-ink); border-color: var(--gen-edge); }
+
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.chip { min-height: 36px; padding: 0 12px; border-radius: 999px; font-size: 15px; }
+.chip[aria-pressed="true"] { background: var(--dark); color: #fff; border-color: var(--dark); }
+.items { flex: 1; min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); grid-auto-rows: 78px; gap: 7px; align-content: start; }
+.item { display: flex; flex-direction: column; justify-content: space-between; align-items: stretch; text-align: left; padding: 7px 9px; }
+.item b { font: 600 15px/1.1 var(--font-ui); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.item span { display: flex; justify-content: space-between; align-items: baseline; font: 700 18px var(--font-key); }
+.item small { font: 500 11px var(--font-mono); color: var(--muted); }
+
+.cmds { flex: 1; min-height: 0; overflow: auto; display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: minmax(50px, 1fr); gap: 7px; }
+.cmd { text-align: left; padding: 6px 12px; display: flex; flex-direction: column; justify-content: center; }
+.cmd b { font: 700 17px var(--font-key); }
+.cmd small { font: 500 12px var(--font-ui); color: var(--muted); }
+.cmd.mgr b::after { content: ' · MGR'; color: var(--age-ink); font-size: 12px; }
+
+.numpad { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(5, minmax(48px, 1fr)); gap: 7px; }
+.numpad .k { font: 600 32px var(--font-key); }
+.numpad .clear { background: #fbe1e1; color: var(--red); border-color: #eab3b3; font-size: 24px; }
+.numpad .x { background: var(--dark); color: #fff; border-color: var(--dark); }
+.numpad .enter { grid-column: span 2; background: var(--teal); color: #fff; border-color: var(--teal); font-size: 26px; letter-spacing: .04em; }
+
+.cmdbar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.1fr); grid-template-rows: 54px 54px; gap: 7px; }
+.cmdbar .k { font-size: 16px; text-transform: uppercase; letter-spacing: .03em; }
+.cmdbar .void { color: var(--red); }
+.cmdbar .drawer { background: #f7d9db; color: var(--red); border-color: #e5a9ae; }
+.cmdbar .exit { background: #f3e6f0; color: #6f1f5c; border-color: #dcbcd4; }
+.cmdbar .pay { grid-column: 5; grid-row: 1 / 3; background: var(--green); color: #fff; border-color: var(--green); font-size: 34px; letter-spacing: .06em; }
+
+/* tender */
+.tender { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; display: grid; gap: 9px; align-content: start; }
+.tdue { background: var(--bar); color: #fff; border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.tdue .lbl { color: var(--bar-muted); font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+.tdue .amt { font: 700 40px/1 var(--font-key); font-variant-numeric: tabular-nums; }
+.tdue .k { min-height: 40px; }
+.tnote { padding: 8px 10px; border-radius: 8px; background: #efe6f8; border: 1px solid #cfb7ea; font-size: 14px; }
+.tnote.plain { background: var(--panel-2); border-color: var(--line); color: var(--muted); }
+.paylist { display: grid; gap: 5px; }
+.paylist div { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: var(--panel-2); border-radius: 8px; padding: 5px 6px 5px 10px; font-variant-numeric: tabular-nums; }
+.paylist .k { min-height: 34px; font-size: 14px; }
+.lbl2 { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+.quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.quick .k { min-height: 50px; font-size: 19px; padding: 4px; }
+.tbtns { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.tbtns .k { min-height: 58px; font-size: 20px; padding: 4px 6px; color: #fff; border-color: transparent; }
+.tbtns .cash { background: var(--cash); grid-column: span 2; font-size: 24px; }
+.tbtns .card { background: var(--card); }
+.tbtns .ebt { background: var(--ebt); }
+
+/* status line */
+.status { background: var(--bar); color: var(--bar-muted); display: flex; flex-wrap: wrap; gap: 4px 18px; padding: 6px 12px; font: 500 13px var(--font-mono); }
+.status b { color: var(--bar-ink); font-weight: 600; }
+.status .test { color: #ffd27a; }
+.status .cloud-ok { color: #8fe0b0; }
+.status .cloud-off { color: #ffb36b; font-weight: 600; }
+.status .clock { margin-left: auto; color: var(--bar-ink); }
+
+/* overlay + modals */
+.overlay { position: fixed; inset: 0; background: rgb(8 16 28 / .55); display: grid; place-items: center; padding: 16px; z-index: 10; }
+.modal { background: var(--panel); border-radius: 14px; width: min(460px, 100%); max-height: calc(100vh - 32px); overflow: auto; padding: 18px; display: grid; gap: 12px; box-shadow: 0 24px 60px rgb(0 0 0 / .35); user-select: none; }
+.modal.wide { width: min(760px, 100%); }
+.modal h2 { margin: 0; font: 700 28px/1.1 var(--font-key); letter-spacing: .01em; }
+.modal p { margin: 0; }
+.muted { color: var(--muted); }
+.m-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.m-actions .k { flex: 1 1 130px; min-height: 54px; font-size: 19px; text-transform: uppercase; }
+.k.primary { background: var(--green); color: #fff; border-color: var(--green); }
+.k.danger { background: var(--red); color: #fff; border-color: var(--red); }
+.k.redline { color: var(--red); }
+.k.cardk { background: var(--card); color: #fff; border-color: var(--card); }
+.k.ebtk { background: var(--ebt); color: #fff; border-color: var(--ebt); }
+.pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.pad .k { min-height: 56px; font-size: 28px; }
+.pad-display { font: 700 40px/1 var(--font-key); text-align: right; padding: 10px 14px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); min-height: 64px; display: flex; align-items: center; justify-content: flex-end; font-variant-numeric: tabular-nums; }
+.err { color: var(--red); font-weight: 600; min-height: 1.3em; }
+.callout { padding: 12px 14px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.callout.cash { background: var(--food-bg); border-color: var(--food-edge); }
+.callout.warn { background: #fdf0d8; border-color: #ecc77d; }
+.big { font: 700 48px/1 var(--font-key); font-variant-numeric: tabular-nums; }
+.receipt-wrap { overflow: auto; max-height: 56vh; border: 1px solid var(--line); border-radius: 8px; background: #fffef9; }
+.receipt { margin: 0; padding: 14px 16px; font: 13px/1.4 var(--font-mono); white-space: pre; width: max-content; color: #1a1a1a; user-select: text; }
+.picklist { display: grid; gap: 6px; max-height: 52vh; overflow: auto; }
+.pick { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 14px; min-height: 54px; border-radius: 10px; border: 1px solid var(--key-edge); background: var(--key); text-align: left; font-variant-numeric: tabular-nums; }
+.pick small { display: block; color: var(--muted); }
+.pick b { font: 700 20px var(--font-key); }
+.pick[aria-pressed="true"] { background: var(--sel); border-color: var(--sel-edge); }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.seg .k[aria-pressed="true"] { background: var(--dark); color: #fff; border-color: var(--dark); }
+.stats { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; font-variant-numeric: tabular-nums; }
+.stats .strong { font-weight: 700; border-top: 1px solid var(--line); padding-top: 6px; }
+.field { display: grid; gap: 4px; }
+.field label { font-size: 13px; font-weight: 600; color: var(--muted); }
+.field input, .field select, .search { min-height: 46px; border-radius: 8px; border: 1px solid var(--key-edge); background: var(--panel-2); font: 500 18px var(--font-ui); padding: 0 12px; color: var(--ink); min-width: 0; width: 100%; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-weight: 600; }
+.check input { width: 22px; height: 22px; }
+.log { width: 100%; border-collapse: collapse; font-size: 13px; }
+.log th, .log td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.log th { color: var(--muted); }
+.table-wrap { overflow: auto; max-height: 56vh; }
+
+/* sign-in */
+.lock { position: fixed; inset: 0; z-index: 20; background: var(--bar); display: grid; place-items: center; padding: 16px; overflow: auto; }
+.lock-card { width: min(380px, 100%); background: var(--panel); border-radius: 16px; padding: 22px; display: grid; gap: 12px; }
+.lock-card .store { font: 700 30px/1 var(--font-key); letter-spacing: .02em; }
+.lock-card .hint { font-size: 13px; color: var(--muted); margin: 0; }
+
+.toast { position: fixed; left: 50%; top: 70px; transform: translateX(-50%); background: var(--dark); color: #fff; padding: 12px 18px; border-radius: 10px; z-index: 30; font-weight: 600; max-width: calc(100% - 32px); box-shadow: 0 10px 30px rgb(0 0 0 / .3); }
+
+
+/* back office */
+.admin { position: fixed; inset: 0; z-index: 8; background: var(--bg); display: grid; grid-template-rows: auto minmax(0, 1fr); user-select: text; }
+.a-top { background: var(--bar); color: var(--bar-ink); display: flex; align-items: center; gap: 8px 16px; padding: 10px 16px; flex-wrap: wrap; }
+.a-top h1 { margin: 0; font: 700 24px var(--font-key); letter-spacing: .06em; }
+.a-top .who { color: var(--bar-muted); }
+.a-top .k { margin-left: auto; text-transform: uppercase; }
+.a-body { display: grid; grid-template-columns: 200px minmax(0, 1fr); min-height: 0; }
+.a-nav { background: var(--panel); border-right: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 4px; overflow: auto; }
+.a-nav button { text-align: left; padding: 12px 14px; border-radius: 8px; border: 0; background: transparent; font: 600 16px var(--font-ui); color: var(--ink); display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.a-nav button:hover { background: var(--panel-2); }
+.a-nav button[aria-current="true"] { background: var(--bar); color: #fff; }
+.a-nav small { font-size: 11px; font-weight: 600; opacity: .65; text-transform: uppercase; letter-spacing: .05em; }
+.a-main { overflow: auto; padding: 20px 24px 32px; display: grid; gap: 16px; align-content: start; }
+.a-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.a-head h2 { margin: 0; font: 700 32px/1.05 var(--font-key); letter-spacing: .01em; }
+.a-head p { margin: 4px 0 0; color: var(--muted); }
+.tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.tools .k { min-height: 46px; font-size: 17px; text-transform: uppercase; padding: 0 16px; }
+.tools .search { flex: 1 1 240px; }
+.tools input[type="date"] { min-height: 46px; border-radius: 8px; border: 1px solid var(--key-edge); padding: 0 10px; font: 500 16px var(--font-ui); background: var(--panel); color: var(--ink); }
+.card-box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; min-width: 0; }
+.card-box.pad16 { padding: 16px; display: grid; gap: 10px; align-content: start; }
+.card-box h3 { margin: 0; font: 700 20px var(--font-key); }
+.card-box .foot { margin: 0; padding: 10px 14px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); }
+.dt { width: 100%; border-collapse: collapse; font-size: 15px; }
+.dt th { position: sticky; top: 0; background: var(--panel-2); text-align: left; padding: 10px 14px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.dt td { padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.dt tr:last-child td { border-bottom: 0; }
+.dt tr.click { cursor: pointer; }
+.dt tr.click:hover td { background: #f6f9fc; }
+.dt tr.tot td { font-weight: 700; background: var(--panel-2); }
+.dt .r, .r { text-align: right; font-variant-numeric: tabular-nums; }
+.dt .cell { min-height: 40px; width: 100%; border-radius: 6px; border: 1px solid var(--key-edge); padding: 0 10px; font: 500 16px var(--font-ui); background: var(--panel-2); color: var(--ink); }
+.mono { font-family: var(--font-mono); font-size: 13.5px; }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 4px; }
+.kpi b { font: 700 34px/1 var(--font-key); font-variant-numeric: tabular-nums; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.swatch { display: inline-block; padding: 6px 12px; border-radius: 8px; font: 700 15px var(--font-key); border: 1px solid; letter-spacing: .02em; }
+.k.sm { min-height: 36px; font-size: 14px; padding: 0 12px; }
+.row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.readout { min-height: 46px; display: flex; align-items: center; padding: 0 12px; border-radius: 8px; background: var(--panel-2); border: 1px dashed var(--key-edge); font: 700 20px var(--font-key); }
+.checks { display: flex; flex-wrap: wrap; gap: 4px 24px; }
+.modal .card-box .dt th { top: 0; }
+@media (max-width: 860px) {
+  .a-body { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+  .a-nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .a-nav button { white-space: nowrap; }
+  .a-main { padding: 16px; }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .two, .row3 { grid-template-columns: 1fr; }
+  .dt { font-size: 14px; } .dt th, .dt td { padding: 8px 10px; }
+}
+@media (max-width: 860px) {
+  html, body, #app { height: auto; }
+  .work { grid-template-columns: 1fr; }
+  .tlist { max-height: 45vh; }
+  .keys { grid-template-columns: 1fr; }
+  .depts { grid-auto-rows: 56px; }
+  .numpad { grid-template-rows: repeat(5, 58px); }
+  .tabs { margin-left: 0; width: 100%; } .tab { flex: 1; padding: 0 6px; }
+  .cmdbar { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(3, 54px); }
+  .cmdbar .pay { grid-column: 1 / -1; grid-row: 3; }
+  .thead, .trow { grid-template-columns: minmax(0, 1fr) 40px 66px 76px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="entry" id="entry"><span class="gt">&gt;</span><span class="buf" id="buf"></span><span class="preview" id="preview"></span></div>
+    <div class="qtybox">Qty <span id="qty">1</span></div>
+    <nav class="tabs">
+      <button class="tab" data-act="tab" data-tab="dept">Departments</button>
+      <button class="tab" data-act="tab" data-tab="items">Touch Items</button>
+      <button class="tab" data-act="tab" data-tab="cmd">Commands</button>
+    </nav>
+  </header>
+
+  <main class="work">
+    <section class="panel" aria-label="Ticket">
+      <div class="thead"><span>Item</span><span>Qty</span><span>Price</span><span>Amount</span></div>
+      <div class="tlist" id="tlist"></div>
+      <div class="tfoot" id="tfoot"></div>
+    </section>
+
+    <section class="right">
+      <div class="keys" id="keys">
+        <div class="area" id="area"></div>
+        <div class="numpad" id="numpad">
+          <button class="k" data-np="7">7</button><button class="k" data-np="8">8</button><button class="k" data-np="9">9</button>
+          <button class="k" data-np="4">4</button><button class="k" data-np="5">5</button><button class="k" data-np="6">6</button>
+          <button class="k" data-np="1">1</button><button class="k" data-np="2">2</button><button class="k" data-np="3">3</button>
+          <button class="k" data-np="00">00</button><button class="k" data-np="0">0</button><button class="k clear" data-np="C">Clear</button>
+          <button class="k x" data-np="X" aria-label="Times (quantity)">X</button><button class="k enter" data-np="E">Enter</button>
+        </div>
+      </div>
+      <div class="cmdbar" id="cmdbar">
+        <button class="k void" data-act="void">Void</button>
+        <button class="k" data-act="lastReceipt">Last Receipt</button>
+        <button class="k" data-act="hold">Hold</button>
+        <button class="k" data-act="recall">Recall Hold</button>
+        <button class="k pay" data-act="pay">Pay</button>
+        <button class="k" data-act="customer">Customer</button>
+        <button class="k drawer" data-act="openDrawer">Open Drawer</button>
+        <button class="k" data-act="allDiscount">All Discount</button>
+        <button class="k exit" data-act="exit">Exit</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="status" id="status"></footer>
+</div>
+
+<div class="admin" id="admin" hidden></div>
+<div class="overlay" id="overlay" hidden><div class="modal" id="modal" role="dialog" aria-modal="true"></div></div>
+<div class="lock" id="lock" hidden></div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+(() => {
+'use strict';
+
+/* ================= helpers ================= */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const money = c => (c < 0 ? '-$' : '$') + (Math.abs(c) / 100).toFixed(2);
+const neg = c => (c ? '-' + money(c).replace('-', '') : '$0.00');
+const pad5 = n => String(n).padStart(5, '0');
+const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
+const sum = (a, f) => a.reduce((t, x) => t + f(x), 0);
+const fmtDT = t => new Date(t).toLocaleString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const fmtT = t => new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+/* ================= setup ================= */
+const STORES = {
+  GRE: { town: 'Greensburg', addr: '16815 LA-43', city: 'Greensburg, LA 70443', phone: '225-222-3339' },
+  AMI: { town: 'Amite', addr: '505 W Oak St', city: 'Amite City, LA 70422', phone: '985-748-3767' },
+  BOG: { town: 'Bogalusa', addr: '1715 Sullivan Dr', city: 'Bogalusa, LA 70427', phone: '985-732-0227' },
+};
+const P_CASHIER = ['sale', 'hold', 'cash.drop'];
+const P_MANAGER = [...P_CASHIER, 'refund', 'void.item', 'void.sale', 'discount', 'price.override', 'drawer.no_sale', 'cash.payout', 'cash.add', 'drawer.close', 'item.create', 'reports', 'backoffice'];
+const ROLES = { cashier: { name: 'Cashier', perms: P_CASHIER }, manager: { name: 'Manager', perms: P_MANAGER }, admin: { name: 'Owner', all: true } };
+const can = (u, p) => !!u && !!ROLES[u.role] && (ROLES[u.role].all || ROLES[u.role].perms.includes(p));
+const COLORS = { food: 'Green (EBT food)', hot: 'Orange (hot food)', age: 'Rose (ID check)', gen: 'Blue (general)' };
+
+// Starting setup. Everything here can be changed in Back Office and is saved on this computer.
+// Tax rates are TEST numbers (percent) until the real rates are entered.
+const DEFAULTS = () => ({
+  storeName: 'BUDDYS SEAFOOD FOODMART',
+  footer: 'THANK YOU FOR SHOPPING AT BUDDYS!',
+  tax: { gen: { name: 'Taxable', rate: 10 }, groc: { name: 'Food (reduced)', rate: 5 }, prep: { name: 'Prepared food', rate: 10 }, none: { name: 'No tax', rate: 0 } },
+  users: [
+    { id: 'u1', name: 'Cashier', role: 'cashier', pin: '1111' },
+    { id: 'u2', name: 'Manager', role: 'manager', pin: '2222' },
+    { id: 'u3', name: 'Owner', role: 'admin', pin: '9999' },
+  ],
+  depts: [
+  { id: 'nonfood', n: 'NON FOOD', g: 'gen', tax: 'gen' },
+  { id: 'hotdeli', n: 'HOT DELI', g: 'hot', tax: 'prep' },
+  { id: 'freshsea', n: 'Fresh Seafood', g: 'food', tax: 'groc', ebt: 1 },
+  { id: 'boilsea', n: 'Boiled Seafood', g: 'hot', tax: 'prep' },
+  { id: 'crawfish', n: 'Hot Boil Crawfish', g: 'hot', tax: 'prep' },
+  { id: 'egroc', n: 'E GROCERY', g: 'food', tax: 'groc', ebt: 1 },
+  { id: 'liquor', n: 'Liquor/Wine', g: 'age', tax: 'gen', age: 21 },
+  { id: 'beer', n: 'BEER', g: 'age', tax: 'gen', age: 21 },
+  { id: 'grocery', n: 'GROCERY', g: 'gen', tax: 'gen' },
+  { id: 'packcig', n: 'Pack Cigs/Tobacco', g: 'age', tax: 'gen', age: 21 },
+  { id: 'cartcig', n: 'Carton Cigs/Tobacco', g: 'age', tax: 'gen', age: 21 },
+  { id: 'phone', n: 'Phone Card', g: 'gen', tax: 'none' },
+  { id: 'propane', n: 'Propane', g: 'gen', tax: 'gen' },
+  { id: 'soda', n: 'SODA', g: 'food', tax: 'groc', ebt: 1 },
+],
+  cats: [{ id: 'drinks', n: 'Drinks' }, { id: 'snacks', n: 'Snacks' }, { id: 'grocery', n: 'Grocery' }, { id: 'seafood', n: 'Seafood' }, { id: 'hot', n: 'Hot Deli' }, { id: 'beer', n: 'Beer' }, { id: 'tobacco', n: 'Tobacco' }, { id: 'other', n: 'Other' }],
+  items: [
+  { c: '1001', n: 'Coca-Cola 20oz', cat: 'drinks', p: 229, cost: 105, tax: 'groc', ebt: 1, quick: 1 },
+  { c: '1002', n: 'Coca-Cola 12pk', cat: 'drinks', p: 899, cost: 600, tax: 'groc', ebt: 1 },
+  { c: '1003', n: "Barq's Root Beer 20oz", cat: 'drinks', p: 229, cost: 105, tax: 'groc', ebt: 1 },
+  { c: '1004', n: 'Red Bull 8.4oz', cat: 'drinks', p: 249, cost: 120, tax: 'groc', ebt: 1, quick: 1 },
+  { c: '1005', n: 'Monster 16oz', cat: 'drinks', p: 299, cost: 150, tax: 'groc', ebt: 1 },
+  { c: '1006', n: 'Water 16.9oz', cat: 'drinks', p: 129, cost: 40, tax: 'groc', ebt: 1 },
+  { c: '1007', n: 'Fountain drink 32oz', cat: 'drinks', p: 189, cost: 35, tax: 'gen', quick: 1 },
+  { c: '1008', n: 'Hot coffee 16oz', cat: 'drinks', p: 199, cost: 40, tax: 'prep', quick: 1 },
+  { c: '2001', n: "Zapp's Voodoo chips", cat: 'snacks', p: 229, cost: 120, tax: 'groc', ebt: 1 },
+  { c: '2002', n: 'Cracklins 4oz', cat: 'snacks', p: 499, cost: 250, tax: 'groc', ebt: 1, quick: 1 },
+  { c: '2003', n: "Hubig's pie", cat: 'snacks', p: 199, cost: 110, tax: 'groc', ebt: 1 },
+  { c: '2004', n: 'Snickers', cat: 'snacks', p: 199, cost: 95, tax: 'groc', ebt: 1 },
+  { c: '3001', n: 'White bread', cat: 'grocery', p: 349, cost: 210, tax: 'groc', ebt: 1 },
+  { c: '3002', n: 'Milk gallon', cat: 'grocery', p: 479, cost: 350, tax: 'groc', ebt: 1 },
+  { c: '3003', n: 'Eggs dozen', cat: 'grocery', p: 399, cost: 260, tax: 'groc', ebt: 1 },
+  { c: '3004', n: 'Bag of ice 10lb', cat: 'grocery', p: 349, cost: 90, tax: 'groc', ebt: 1, quick: 1 },
+  { c: '4001', n: 'Shrimp (lb)', cat: 'seafood', p: 899, cost: 600, tax: 'groc', ebt: 1, weight: 1, quick: 1 },
+  { c: '4002', n: 'Catfish fillets (lb)', cat: 'seafood', p: 799, cost: 520, tax: 'groc', ebt: 1, weight: 1 },
+  { c: '4003', n: 'Live crawfish (lb)', cat: 'seafood', p: 399, cost: 250, tax: 'groc', ebt: 1, weight: 1 },
+  { c: '4004', n: 'Boiled crawfish (lb)', cat: 'seafood', p: 699, cost: 350, tax: 'prep', weight: 1, quick: 1 },
+  { c: '5001', n: 'Wings 6pc', cat: 'hot', p: 799, cost: 310, tax: 'prep', quick: 1 },
+  { c: '5002', n: 'Wings 12pc', cat: 'hot', p: 1499, cost: 600, tax: 'prep' },
+  { c: '5003', n: 'Plate, entree + 2 sides', cat: 'hot', p: 1099, cost: 400, tax: 'prep', quick: 1 },
+  { c: '5004', n: 'Boudin link', cat: 'hot', p: 349, cost: 140, tax: 'prep', quick: 1 },
+  { c: '6001', n: 'Bud Light 12pk', cat: 'beer', p: 1399, cost: 950, tax: 'gen', age: 21 },
+  { c: '6002', n: 'Miller Lite 6pk', cat: 'beer', p: 899, cost: 600, tax: 'gen', age: 21 },
+  { c: '6003', n: 'Michelob Ultra 24oz', cat: 'beer', p: 299, cost: 170, tax: 'gen', age: 21, quick: 1 },
+  { c: '7001', n: 'Cigarettes pack', cat: 'tobacco', p: 899, cost: 720, tax: 'gen', age: 21 },
+  { c: '7002', n: 'Cigar single', cat: 'tobacco', p: 149, cost: 80, tax: 'gen', age: 21 },
+  { c: '8001', n: 'Phone charger', cat: 'other', p: 999, cost: 400, tax: 'gen' },
+  { c: '8002', n: 'Lighter', cat: 'other', p: 199, cost: 60, tax: 'gen' },
+  { c: '8003', n: 'Propane exchange', cat: 'other', p: 2499, cost: 1600, tax: 'gen' },
+],
+});
+const deptTag = d => (d.ebt ? 'EBT food' : d.age ? `ID ${d.age}+` : d.g === 'hot' ? 'Hot · no EBT' : taxOf(d.tax).rate === 0 ? 'No tax' : 'Taxable');
+
+/* ================= saved state (this computer only) ================= */
+const KEY = 'buddys-register-v2';
+const fresh = () => ({ store: 'GRE', reg: 1, seq: {}, sales: [], held: [], drawers: {}, closings: [], audit: [], config: DEFAULTS() });
+let S = fresh();
+try { const raw = localStorage.getItem(KEY); if (raw) S = Object.assign(fresh(), JSON.parse(raw)); } catch (e) { /* run without saving */ }
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } };
+
+const cfg = () => cloudCfg || S.config;
+const taxOf = id => cfg().tax[id] || { name: 'No tax', rate: 0 };
+const cats = () => [['quick', 'Favorites'], ...cfg().cats.map(c => [c.id, c.n])];
+const catalog = () => cfg().items;
+const findCode = code => {
+  const ci = cfg().codeIdx;
+  if (ci) { code = String(code).trim(); return ci[code] || ci['0' + code] || ci[code.replace(/^0+/, '')] || null; }
+  return catalog().find(p => p.c === code);
+};
+const regKey = () => `${S.store}-${S.reg}`;
+const regNo = () => String(S.reg).padStart(2, '0');
+const loc = () => (cloudCfg && cloudCfg.store) || STORES[S.store];
+const drawer = () => S.drawers[regKey()] || null;
+const nextTrans = () => pad5((S.seq[regKey()] || 0) + 1);
+
+/* ================= cloud link ================= */
+// Connected registers download items, prices, departments, tax and employees from
+// the Back Office database about every 15 seconds, and send their sales up.
+// Everything is also kept on this computer, so the register keeps selling offline.
+const CLOUD_URL = 'https://qtyslydehajlnbtrxxed.supabase.co';
+const CLOUD_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF0eXNseWRlaGFqbG5idHJ4eGVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTExMTczODcsImV4cCI6MjEwNjY5MzM4N30.BdEZFmPOMOBDBkBFkKQrjVwMgOVmKhw1CWTf1Cmxc4M';
+const CLOUD_EVERY = 15000;
+const cloudOn = () => !!(S.cloud && S.cloud.registerId);
+let cloudCfg = null, syncing = false, cloudState = { ok: false, at: 0, msg: '' };
+
+// Small SHA-256 (for the offline PIN check; works without the internet).
+function sha256(str) {
+  const K = [0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];
+  const bytes = new TextEncoder().encode(str), len = bytes.length;
+  const n = ((len + 9 + 63) >> 6) << 6, m = new Uint8Array(n); m.set(bytes); m[len] = 0x80;
+  const bits = len * 8; for (let i = 0; i < 8; i++) m[n - 1 - i] = (bits / 2 ** (8 * i)) & 0xff;
+  let h = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+  const w = new Uint32Array(64), rot = (x, r) => (x >>> r) | (x << (32 - r));
+  for (let o = 0; o < n; o += 64) {
+    for (let i = 0; i < 16; i++) w[i] = (m[o + 4 * i] << 24) | (m[o + 4 * i + 1] << 16) | (m[o + 4 * i + 2] << 8) | m[o + 4 * i + 3];
+    for (let i = 16; i < 64; i++) { const s0 = rot(w[i - 15], 7) ^ rot(w[i - 15], 18) ^ (w[i - 15] >>> 3), s1 = rot(w[i - 2], 17) ^ rot(w[i - 2], 19) ^ (w[i - 2] >>> 10); w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0; }
+    let [a, b, c, d, e, f, g, hh] = h;
+    for (let i = 0; i < 64; i++) {
+      const t1 = (hh + (rot(e, 6) ^ rot(e, 11) ^ rot(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) | 0;
+      const t2 = ((rot(a, 2) ^ rot(a, 13) ^ rot(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+      hh = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    h = [h[0] + a, h[1] + b, h[2] + c, h[3] + d, h[4] + e, h[5] + f, h[6] + g, h[7] + hh].map(x => x | 0);
+  }
+  return h.map(x => (x >>> 0).toString(16).padStart(8, '0')).join('');
+}
+
+function userByPin(pin) {
+  if (!pin) return null;
+  if (cloudCfg) return cfg().users.find(u => u.pinCheck && u.pinCheck === sha256(`${u.id}:${pin}`)) || null;
+  return cfg().users.find(u => u.pin === pin) || null;
+}
+
+async function cloudCall(fn, args, token) {
+  let r;
+  try {
+    r = await fetch(`${CLOUD_URL}/rest/v1/rpc/${fn}`, { method: 'POST', headers: { apikey: CLOUD_KEY, Authorization: 'Bearer ' + (token || CLOUD_KEY), 'Content-Type': 'application/json' }, body: JSON.stringify(args) });
+  } catch (e) { throw new Error('No internet'); }
+  const text = await r.text(); let j = null; try { j = text ? JSON.parse(text) : null; } catch (e) { j = null; }
+  if (!r.ok) throw new Error((j && j.message) || `Cloud error ${r.status}`);
+  return j;
+}
+
+function localDayStr(t) { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+function buildCloudConfig(R) {
+  if (!R || !R.store) return null;
+  const today = localDayStr(Date.now()), now = Date.now();
+  const cents = v => Math.round(Number(v || 0) * 100);
+  const rateOf = taxId => {
+    const r = Object.values(R.rates).filter(x => x.tax_category_id === taxId && x.effective_from <= today).sort((a, b) => (a.effective_from < b.effective_from ? 1 : -1))[0];
+    return r ? Math.round(Number(r.rate) * 100 * 1000) / 1000 : 0;
+  };
+  const tax = {}; Object.values(R.taxCats).forEach(t => { tax[t.id] = { name: t.name, rate: rateOf(t.id) }; });
+  const byOrder = (a, b) => (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(b.name);
+  const depts = Object.values(R.depts).filter(d => d.active && d.show_key !== false).sort(byOrder)
+    .map(d => ({ id: d.id, n: d.name, g: d.key_color || 'gen', tax: d.tax_category_id, ebt: d.ebt_eligible ? 1 : 0, age: d.min_age || 0 }));
+  const cats = Object.values(R.cats).filter(c => c.active && !c.department_id).sort(byOrder).map(c => ({ id: c.id, n: c.name }));
+  const codes = {}; Object.values(R.barcodes).forEach(b => { (codes[b.product_id] = codes[b.product_id] || []).push(b.barcode); });
+  const items = [], codeIdx = {};
+  Object.values(R.products).filter(p => p.active).forEach(p => {
+    const sp = R.sps[p.id];
+    if (sp && sp.active === false) return;
+    let price = sp && sp.price != null ? sp.price : p.base_price;
+    if (sp && sp.sale_price != null && (!sp.sale_starts_at || Date.parse(sp.sale_starts_at) <= now) && (!sp.sale_ends_at || Date.parse(sp.sale_ends_at) > now)) price = sp.sale_price;
+    const list = (codes[p.id] || []).slice().sort();
+    const it = { id: p.id, c: list[0] || p.sku || p.id.slice(0, 8), codes: list, n: p.name, cat: p.category_id || '', p: cents(price), cost: cents(p.cost), tax: p.tax_category_id, ebt: p.ebt_eligible ? 1 : 0, age: p.min_age || 0, weight: p.sold_by_weight ? 1 : 0, quick: p.quick_key ? 1 : 0 };
+    items.push(it);
+    [it.c, ...list].forEach(c => { codeIdx[c] = it; });
+  });
+  items.sort((a, b) => a.n.localeCompare(b.n));
+  const roleKey = r => (!r ? 'cashier' : r.is_admin ? 'admin' : /manager/i.test(r.name) ? 'manager' : 'cashier');
+  const users = Object.values(R.emps).filter(e => e.active && e.pin_check).map(e => ({ id: e.id, name: e.full_name, role: roleKey(R.roles[e.role_id]), pinCheck: e.pin_check }));
+  const receipt = (R.settings.receipt || {}).value || {};
+  const st = R.store;
+  return {
+    storeName: receipt.store_name || 'BUDDYS SEAFOOD FOODMART', footer: receipt.footer || 'THANK YOU!', tax, depts, cats, items, users, codeIdx,
+    store: { town: st.name, addr: st.address || '', city: `${st.city || ''}${st.state ? ', ' + st.state : ''} ${st.zip || ''}`.trim(), phone: st.phone || '' },
+  };
+}
+function applyCatalog(ch) {
+  const c = S.cloud;
+  if (ch.full || !c.raw) c.raw = { products: {}, barcodes: {}, sps: {}, depts: {}, cats: {}, taxCats: {}, rates: {}, roles: {}, emps: {}, settings: {}, store: null };
+  const R = c.raw;
+  (ch.products || []).forEach(x => { R.products[x.id] = x; });
+  (ch.barcodes || []).forEach(x => { R.barcodes[x.barcode] = x; });
+  (ch.store_products || []).forEach(x => { R.sps[x.product_id] = x; });
+  (ch.departments || []).forEach(x => { R.depts[x.id] = x; });
+  (ch.categories || []).forEach(x => { R.cats[x.id] = x; });
+  (ch.tax_categories || []).forEach(x => { R.taxCats[x.id] = x; });
+  (ch.tax_rates || []).forEach(x => { R.rates[x.id] = x; });
+  (ch.roles || []).forEach(x => { R.roles[x.id] = x; });
+  (ch.employees || []).forEach(x => { R.emps[x.id] = x; });
+  (ch.settings || []).forEach(x => { R.settings[x.key] = x; });
+  (ch.deleted || []).forEach(d => { if (d.entity === 'product_barcode') delete R.barcodes[d.key]; });
+  if (ch.store) R.store = ch.store;
+  c.version = ch.version;
+  cloudCfg = buildCloudConfig(R);
+}
+async function cloudSync() {
+  if (!cloudOn() || syncing) return;
+  syncing = true;
+  const c = S.cloud;
+  try {
+    while (S.outbox && S.outbox.length) {
+      const batch = S.outbox.slice(0, 40);
+      await cloudCall('register_upload', { p_register: c.registerId, p_key: c.key, p_sales: batch });
+      const sent = new Set(batch.map(b => b.key));
+      S.outbox = S.outbox.filter(o => !sent.has(o.key) || batch.find(b => b.key === o.key) !== o);
+      save();
+    }
+    const before = c.version || 0;
+    const ch = await cloudCall('register_catalog', { p_register: c.registerId, p_key: c.key, p_since: before });
+    const changed = ch.full || ['products', 'barcodes', 'store_products', 'departments', 'categories', 'tax_categories', 'tax_rates', 'employees', 'settings', 'roles', 'deleted'].some(k => (ch[k] || []).length);
+    if (changed || !cloudCfg) applyCatalog(ch); else c.version = ch.version;
+    cloudState = { ok: true, at: Date.now(), msg: '' };
+    save();
+    if (changed && user && !modalCfg && $('#admin').hidden && mode === 'sell') renderArea();
+    if (changed && !user && !$('#lock').hidden) { /* nothing to redraw on the PIN screen */ }
+  } catch (e) {
+    cloudState = { ok: false, at: cloudState.at, msg: e.message };
+  } finally { syncing = false; renderStatus(); }
+}
+function queueSale(sale) {
+  if (!cloudOn()) return;
+  S.outbox = (S.outbox || []).filter(o => o.key !== sale.key);
+  S.outbox.push({ key: sale.key, at: sale.at, total: sale.total / 100, store: sale.store, reg: sale.reg, trans: sale.trans, cashier: sale.cashier, sale });
+}
+function cloudBadge() {
+  if (!cloudOn()) return '<span class="test">TEST MODE · not connected</span>';
+  const waiting = (S.outbox || []).length;
+  if (cloudState.ok) return `<span class="cloud-ok">● Cloud synced ${fmtT(cloudState.at)}${waiting ? ` · ${waiting} sale${waiting > 1 ? 's' : ''} to send` : ''}</span>`;
+  return `<span class="cloud-off">● Offline${waiting ? ` · ${waiting} sale${waiting > 1 ? 's' : ''} waiting` : ''} · still selling</span>`;
+}
+function connectCloud() {
+  const st = S.store, rg = S.reg;
+  if (cloudOn()) {
+    return choose({
+      title: 'Connected to the cloud',
+      body: `<p>This register is <b>${esc(loc().town)} register ${regNo()}</b>. Items, prices and employees come from the Back Office app.</p>
+        <div class="stats"><span>Last sync</span><span>${cloudState.at ? fmtT(cloudState.at) : 'Not yet'}</span><span>Sales waiting to send</span><span>${(S.outbox || []).length}</span><span>Items</span><span>${cfg().items.length}</span></div>
+        ${cloudState.msg ? `<div class="callout warn">${esc(cloudState.msg)}</div>` : ''}`,
+      buttons: [
+        { label: 'Disconnect', cls: 'redline', run: () => setTimeout(() => requirePerm('settings', 'Disconnecting from the cloud', () => choose({ title: 'Disconnect this register?', body: '<p>It goes back to test mode with sample items. Sales already sent stay in the cloud.</p>' + ((S.outbox || []).length ? `<div class="callout warn">${S.outbox.length} sale(s) have not been sent yet and will stay on this computer.</div>` : ''), buttons: [{ label: 'Stay connected' }, { label: 'Disconnect', cls: 'danger', run: () => { S.cloud = null; cloudCfg = null; save(); signOut(true); } }] }))) },
+        { label: 'Sync now', run: () => cloudSync().then(() => toast(cloudState.ok ? 'Synced.' : cloudState.msg)) },
+        { label: 'Close', cls: 'primary' },
+      ],
+    });
+  }
+  let store = st, reg = rg;
+  const draw = () => {
+    $$m('[data-m="st"]').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === store));
+    $$m('[data-m="rg"]').forEach(b => b.setAttribute('aria-pressed', +b.dataset.n === reg));
+  };
+  openModal({
+    title: 'Connect to the cloud', wide: true,
+    body: `<p>Sign in with your <b>Back Office</b> email and password once. After that, this register gets items, prices and employees from Back Office by itself.</p>
+      <div class="row2"><div class="field"><label for="ccE">Email</label><input id="ccE" type="email" autocomplete="username" autofocus></div>
+        <div class="field"><label for="ccP">Password</label><input id="ccP" type="password" autocomplete="current-password"></div></div>
+      <div class="lbl2">This register is at</div><div class="seg" style="grid-template-columns:repeat(3,1fr)">${Object.entries(STORES).map(([k, s]) => `<button class="k" data-m="st" data-k="${k}">${esc(s.town)}</button>`).join('')}</div>
+      <div class="lbl2">Register number</div><div class="seg" style="grid-template-columns:repeat(6,1fr)">${[1, 2, 3, 4, 5, 6].map(n => `<button class="k" data-m="rg" data-n="${n}">${String(n).padStart(2, '0')}</button>`).join('')}</div>
+      <div class="callout warn">After connecting, sign in with <b>your PIN from Back Office → Employees</b>. The test PINs stop working.</div>
+      <div class="err" id="merr"></div>
+      <div class="m-actions"><button class="k" data-m="cancel">Cancel</button><button class="k primary" data-m="go">Connect</button></div>`,
+    onOpen: draw, enter: 'go',
+    actions: {
+      cancel: closeModal, st: el => { store = el.dataset.k; draw(); }, rg: el => { reg = +el.dataset.n; draw(); },
+      go: async el => {
+        if (cart.lines.length) return modalErr('Finish, hold or void the ticket first.');
+        const email = $('#ccE').value.trim(), pw = $('#ccP').value;
+        if (!email || !pw) return modalErr('Enter your Back Office email and password.');
+        el.disabled = true; el.textContent = 'Connecting…'; modalErr('');
+        try {
+          let r;
+          try { r = await fetch(`${CLOUD_URL}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { apikey: CLOUD_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: pw }) }); }
+          catch (e) { throw new Error('No internet. Connect the register to the internet and try again.'); }
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(/invalid/i.test(j.error_description || j.msg || '') ? 'Wrong email or password.' : (j.error_description || j.msg || 'Sign-in failed.'));
+          const pair = await cloudCall('pair_register', { p_store_code: store, p_number: reg }, j.access_token);
+          S.cloud = { registerId: pair.register_id, key: pair.key, version: 0, raw: null };
+          S.store = store; S.reg = reg; S.outbox = S.outbox || [];
+          const ch = await cloudCall('register_catalog', { p_register: pair.register_id, p_key: pair.key, p_since: 0 });
+          applyCatalog(ch); cloudState = { ok: true, at: Date.now(), msg: '' };
+          audit('cloud.connect', `${store} register ${reg}`); save();
+          closeModal(); signOut(true); toast(`Connected. ${cfg().items.length} items loaded. Sign in with your PIN.`);
+        } catch (e) { if (el.isConnected) { el.disabled = false; el.textContent = 'Connect'; } modalErr(e.message); }
+      },
+    },
+  });
+}
+const $$m = s => [...document.querySelectorAll('#modal ' + s)];
+
+/* ================= hardware (Windows register app only) ================= */
+// In the installed app, window.buddysHW talks to the receipt printer and cash drawer.
+// In a web browser it doesn't exist, and everything here quietly does nothing.
+const HW = window.buddysHW || null;
+let hwInfo = null;
+if (HW) {
+  HW.info().then(i => { hwInfo = i; setReceiptWidth(i.settings.width); renderStatus(); }).catch(() => {});
+  HW.onUpdateReady(v => { if (hwInfo) hwInfo.updateReady = v; toast(`Update ${v} is ready. It installs when the register closes, or overnight.`); renderStatus(); });
+  HW.onCloseBlocked(() => toast('Finish, hold or void the ticket before closing the register.'));
+}
+function setReceiptWidth(w) { w = Number(w); W = [32, 42, 48].includes(w) ? w : 42; }
+function receiptJob(text, opts = {}) {
+  return { lines: String(text).split('\n').map((t, i) => ({ text: t, bold: i === 0 || /^TOTAL\b/.test(t) })), cut: true, drawer: !!opts.drawer };
+}
+async function hwPrint(text, opts) {
+  if (!HW) return;
+  const r = await HW.print(receiptJob(text, opts)).catch(e => ({ ok: false, error: e.message }));
+  if (!r.ok) toast('Printer: ' + r.error);
+}
+async function hwDrawer() {
+  if (!HW) return;
+  const r = await HW.drawer().catch(e => ({ ok: false, error: e.message }));
+  if (!r.ok) toast('Drawer: ' + r.error);
+}
+function hwState() { if (HW) HW.setState({ busy: cart.lines.length > 0 || payments.length > 0, signedIn: !!user }); }
+function hwAfterSale(sale) {
+  if (!HW || !hwInfo) return;
+  const cash = sale.payments.some(p => p.type === 'cash');
+  const kick = cash && hwInfo.settings.drawerOnCash;
+  if (hwInfo.settings.autoPrint) hwPrint(receiptText(sale), { drawer: kick });
+  else if (kick) hwDrawer();
+}
+async function hardwareSetup() {
+  const info = await HW.info(); hwInfo = info;
+  const s = { ...info.settings };
+  const printers = await HW.printers();
+  const help = {
+    raw: 'For a receipt printer installed in Windows (USB). Prints fast and can cut paper and open the drawer.',
+    network: 'For a receipt printer plugged into the network (Ethernet or Wi-Fi). Print its setup page to find the IP address.',
+    driver: 'Normal Windows printing, for printers that are not receipt printers. The drawer must be opened by the printer driver.',
+  };
+  const draw = () => {
+    $$m('[data-m="mode"]').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === s.mode));
+    $('#hwHelp').textContent = help[s.mode];
+    $('#hwPrn').hidden = s.mode === 'network';
+    $('#hwNet').hidden = s.mode !== 'network';
+  };
+  const collect = () => ({
+    ...s, printerName: $('#hwP') ? $('#hwP').value : s.printerName, ip: $('#hwIp').value.trim(), port: Number($('#hwPort').value) || 9100,
+    width: Number($('#hwW').value) || 42, autoPrint: $('#hwA').checked, drawerOnCash: $('#hwD').checked, kiosk: $('#hwK').checked, autoStart: $('#hwS').checked,
+  });
+  const saveNow = async () => { const saved = await HW.saveSettings(collect()); hwInfo.settings = saved; Object.assign(s, saved); setReceiptWidth(saved.width); return saved; };
+  const testText = () => {
+    const o = head(S.store, S.reg, Date.now(), ['*** PRINTER TEST ***']);
+    o.push('If you can read this, printing works.', '1234567890'.repeat(5).slice(0, W), '', center('Cash drawer should open'), center('if "Open drawer" was tapped.'));
+    return o.join('\n');
+  };
+  openModal({
+    title: 'Hardware Setup', wide: true,
+    body: `<div class="lbl2">How the receipt printer is connected</div>
+      <div class="seg" style="grid-template-columns:repeat(3,1fr)"><button class="k" data-m="mode" data-v="raw">Windows printer</button><button class="k" data-m="mode" data-v="network">Network (IP)</button><button class="k" data-m="mode" data-v="driver">Normal printing</button></div>
+      <p class="muted" id="hwHelp"></p>
+      <div class="field" id="hwPrn"><label for="hwP">Printer</label><select id="hwP">${printers.length ? printers.map(p => `<option value="${esc(p.name)}"${p.name === s.printerName ? ' selected' : ''}>${esc(p.name)}${p.isDefault ? ' (default)' : ''}</option>`).join('') : '<option value="">No printers found in Windows</option>'}</select></div>
+      <div class="row2" id="hwNet"><div class="field"><label for="hwIp">Printer IP address</label><input id="hwIp" value="${esc(s.ip || '')}" placeholder="192.168.1.50" inputmode="decimal"></div>
+        <div class="field"><label for="hwPort">Port</label><input id="hwPort" value="${esc(s.port || 9100)}" inputmode="numeric"></div></div>
+      <div class="field"><label for="hwW">Paper</label><select id="hwW"><option value="42"${+s.width === 42 ? ' selected' : ''}>80 mm wide (42 characters, most printers)</option><option value="48"${+s.width === 48 ? ' selected' : ''}>80 mm wide (48 characters)</option><option value="32"${+s.width === 32 ? ' selected' : ''}>58 mm wide (32 characters)</option></select></div>
+      <div class="checks" style="display:flex;flex-wrap:wrap;gap:4px 24px">
+        <label class="check"><input type="checkbox" id="hwA" ${s.autoPrint ? 'checked' : ''}> Print a receipt after every sale</label>
+        <label class="check"><input type="checkbox" id="hwD" ${s.drawerOnCash ? 'checked' : ''}> Open the drawer for cash</label>
+        <label class="check"><input type="checkbox" id="hwK" ${s.kiosk ? 'checked' : ''}> Full screen</label>
+        <label class="check"><input type="checkbox" id="hwS" ${s.autoStart ? 'checked' : ''}> Start when Windows starts</label></div>
+      <div class="callout">Buddy's Register version <b>${esc(info.version)}</b>. ${info.updateReady ? `Version <b>${esc(info.updateReady)}</b> is downloaded and ready.` : 'Updates download by themselves and install when the register closes, or overnight.'}</div>
+      <div class="err" id="merr"></div>
+      <div class="m-actions"><button class="k" data-m="test">Test print</button><button class="k" data-m="kick">Open drawer</button>${info.updateReady ? '<button class="k" data-m="update">Install update now</button>' : ''}<button class="k" data-m="cancel">Cancel</button><button class="k primary" data-m="save">Save</button></div>`,
+    onOpen: draw,
+    actions: {
+      cancel: closeModal,
+      mode: el => { s.mode = el.dataset.v; draw(); },
+      test: async el => { modalErr(''); el.disabled = true; await saveNow(); const r = await HW.print(receiptJob(testText())); el.disabled = false; modalErr(r.ok ? '' : r.error); if (r.ok) toast('Test receipt sent.'); },
+      kick: async el => { modalErr(''); el.disabled = true; await saveNow(); const r = await HW.drawer(); el.disabled = false; modalErr(r.ok ? '' : r.error); if (r.ok) toast('Drawer command sent.'); },
+      update: async () => { if (cart.lines.length || payments.length) return modalErr('Finish the ticket first.'); audit('app.update', `Installing ${info.updateReady}`); const ok = await HW.installUpdate(); if (!ok) modalErr('Could not start the update right now.'); },
+      save: async () => { const saved = await saveNow(); audit('hardware.setup', `${saved.mode} ${saved.mode === 'network' ? saved.ip : saved.printerName}`); closeModal(); toast('Hardware settings saved.'); },
+    },
+  });
+}
+
+function audit(action, detail, approver) {
+  S.audit.push({ at: Date.now(), user: user ? user.name : '', approver: approver && approver !== user ? approver.name : '', store: S.store, reg: S.reg, action, detail });
+  if (S.audit.length > 1000) S.audit.splice(0, S.audit.length - 1000);
+  save();
+}
+
+/* ================= session ================= */
+let user = null;
+const newCart = () => ({ lines: [], saleDisc: null, ageOk: 0 });
+let cart = newCart();
+let payments = [];
+let selected = null;
+let mode = 'sell';         // sell | tender
+let tab = 'dept';          // dept | items | cmd
+let itemCat = 'quick';
+let buf = '';              // number pad / scanner entry
+let qty = 1;               // X multiplier for the next item
+let lastSale = null;       // shown as Total / Paid / Change after a sale
+const selLine = () => cart.lines.find(l => l.lid === selected) || null;
+
+/* ================= totals ================= */
+function calc() {
+  const rows = cart.lines.map(l => {
+    const gross = Math.round(l.qty * l.price);
+    let disc = 0;
+    if (l.disc) disc = l.disc.type === 'pct' ? Math.round(gross * l.disc.value / 100) : Math.min(gross, l.disc.value);
+    return { l, gross, disc, net1: gross - disc, alloc: 0 };
+  });
+  const sub1 = sum(rows, r => r.net1);
+  let sd = 0;
+  if (cart.saleDisc && sub1 > 0) sd = cart.saleDisc.type === 'pct' ? Math.round(sub1 * cart.saleDisc.value / 100) : Math.min(sub1, cart.saleDisc.value);
+  if (sd > 0) {
+    rows.forEach(r => { r.alloc = Math.floor(sd * r.net1 / sub1); });
+    let rem = sd - sum(rows, r => r.alloc);
+    for (const r of [...rows].sort((a, b) => b.net1 - a.net1)) { if (rem <= 0) break; if (r.alloc < r.net1) { r.alloc++; rem--; } }
+  }
+  rows.forEach(r => { r.net = r.net1 - r.alloc; r.tax = Math.round(r.net * taxOf(r.l.tax).rate / 100); });
+  const eligible = sum(rows.filter(r => r.l.ebt), r => r.net);
+  const eligTax = sum(rows.filter(r => r.l.ebt), r => r.tax);
+  const ebtPaid = sum(payments.filter(p => p.type === 'ebt'), p => p.amount);
+  const forgiven = eligible > 0 ? Math.round(eligTax * Math.min(ebtPaid, eligible) / eligible) : 0;
+  const subtotal = sum(rows, r => r.net), tax = sum(rows, r => r.tax);
+  const total = subtotal + tax - forgiven, paid = sum(payments, p => p.amount);
+  const otherPaid = payments.some(p => p.type !== 'ebt');
+  return {
+    rows, gross: sum(rows, r => r.gross), discount: sum(rows, r => r.disc + r.alloc), subtotal, tax, eligible, eligTax, ebtPaid, forgiven,
+    total, paid, balance: total - paid, otherPaid, ebtMax: otherPaid ? 0 : Math.max(0, eligible - ebtPaid),
+    items: sum(cart.lines, l => (l.weight ? 1 : l.qty)),
+  };
+}
+
+/* ================= modal keypads ================= */
+const pads = {};
+const PAD_MAX = { money: 7, qty: 3, weight: 5, pct: 3, pin: 8, dob: 8 };
+function makePad(name, m, initial = '') { pads[name] = { mode: m, d: String(initial || '') }; }
+function padValue(name) {
+  const p = pads[name]; const n = parseInt(p.d || '0', 10) || 0;
+  if (p.mode === 'weight') return n / 100;
+  if (p.mode === 'pin' || p.mode === 'dob') return p.d;
+  return n;
+}
+function padText(name) {
+  const p = pads[name];
+  switch (p.mode) {
+    case 'money': return money(padValue(name));
+    case 'weight': return padValue(name).toFixed(2) + ' lb';
+    case 'pct': return (p.d || '0') + '%';
+    case 'pin': return p.d ? '•'.repeat(p.d.length) : ' ';
+    case 'dob': { const d = (p.d + '________').slice(0, 8); return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`; }
+    default: return p.d || '0';
+  }
+}
+function drawPad(name) { const el = document.querySelector(`[data-pad-display="${name}"]`); if (el && pads[name]) el.textContent = padText(name); }
+function padPress(name, k) {
+  const p = pads[name]; if (!p) return;
+  if (k === 'C') p.d = '';
+  else if (k === 'back') p.d = p.d.slice(0, -1);
+  else if (/^\d+$/.test(k)) {
+    for (const ch of k) {
+      if (p.d.length >= PAD_MAX[p.mode]) break;
+      if (p.d === '' && ch === '0' && !['pin', 'dob'].includes(p.mode)) continue;
+      p.d += ch;
+    }
+  }
+  drawPad(name);
+}
+const keypad = name => `<div class="pad" data-pad="${name}">${['7', '8', '9', '4', '5', '6', '1', '2', '3'].map(k => `<button type="button" class="k" data-k="${k}">${k}</button>`).join('')}<button type="button" class="k" data-k="C">C</button><button type="button" class="k" data-k="0">0</button><button type="button" class="k" data-k="back" aria-label="Backspace">&#9003;</button></div>`;
+const padBox = name => `<div class="pad-display" data-pad-display="${name}">${esc(padText(name))}</div>`;
+
+/* ================= modal ================= */
+let modalCfg = null;
+function openModal(cfg) {
+  modalCfg = Object.assign({ closable: true, actions: {} }, cfg);
+  const m = $('#modal');
+  m.className = 'modal' + (cfg.wide ? ' wide' : '');
+  m.innerHTML = (cfg.title ? `<h2>${esc(cfg.title)}</h2>` : '') + cfg.body;
+  $('#overlay').hidden = false;
+  if (cfg.onOpen) cfg.onOpen(m);
+  const f = m.querySelector('[autofocus]'); if (f) f.focus();
+}
+function closeModal() { $('#overlay').hidden = true; $('#modal').innerHTML = ''; modalCfg = null; delete pads.modal; }
+function modalErr(msg) { const e = $('#merr'); if (e) e.textContent = msg; }
+function numberPrompt({ title, sub = '', mode: m, initial = '', okLabel = 'OK', onOk, validate, cancelLabel = 'Cancel' }) {
+  makePad('modal', m, initial);
+  openModal({
+    title,
+    body: `${sub ? `<p>${sub}</p>` : ''}${padBox('modal')}<div class="err" id="merr"></div>${keypad('modal')}
+      <div class="m-actions"><button class="k" data-m="cancel">${esc(cancelLabel)}</button><button class="k primary" data-m="ok">${esc(okLabel)}</button></div>`,
+    enter: 'ok',
+    actions: {
+      cancel: closeModal,
+      ok: () => { const v = padValue('modal'); const err = validate ? validate(v) : null; if (err) return modalErr(err); closeModal(); onOk(v); },
+    },
+  });
+}
+function choose({ title, body, buttons, wide }) {
+  const actions = {};
+  const html = buttons.map((b, i) => { actions['b' + i] = () => { closeModal(); if (b.run) b.run(); render(); }; return `<button class="k ${b.cls || ''}" data-m="b${i}">${esc(b.label)}</button>`; }).join('');
+  openModal({ title, wide, body: `${body}<div class="m-actions">${html}</div>`, actions, enter: 'b' + (buttons.length - 1) });
+}
+function requirePerm(perm, label, fn) {
+  if (can(user, perm)) return fn(user);
+  numberPrompt({
+    title: 'Manager approval', sub: `<b>${esc(label)}</b> needs a manager. Manager, enter your PIN.`, mode: 'pin', okLabel: 'Approve',
+    validate: pin => { const a = userByPin(pin); if (!a) return 'PIN not recognized.'; if (!can(a, perm)) return `${a.name} can't approve this.`; return null; },
+    onOk: pin => fn(userByPin(pin)),
+  });
+}
+let toastT;
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 2600); }
+
+/* ================= render ================= */
+function render() { renderTop(); renderTicket(); renderArea(); renderBar(); renderStatus(); hwState(); }
+
+function renderTop() {
+  const b = $('#buf'), pv = $('#preview');
+  if (buf) { b.textContent = buf; b.classList.remove('ph'); }
+  else { b.textContent = mode === 'tender' ? 'Type the cash amount, or tap a payment' : 'Scan, or type price then tap a department'; b.classList.add('ph'); }
+  const asMoney = parseInt(buf || '0', 10);
+  pv.textContent = buf && (mode === 'tender' || buf.length <= 7) ? money(asMoney) : '';
+  $('#entry').classList.toggle('active', !!buf);
+  const q = $('#qty'); q.textContent = qty; q.classList.toggle('on', qty !== 1);
+  document.querySelectorAll('.tab').forEach(t => { t.setAttribute('aria-pressed', mode === 'sell' && t.dataset.tab === tab); t.disabled = mode === 'tender'; });
+}
+
+function lineSub(r) {
+  const l = r.l, bits = [];
+  if (l.weight) bits.push(`${l.qty.toFixed(2)} lb @ ${money(l.price)}/lb`);
+  if (l.override) bits.push(`<i class="tag ovr">Was ${money(l.base)}</i>`);
+  if (r.disc) bits.push(`<span class="disc">Discount ${neg(r.disc)}${l.disc.type === 'pct' ? ` (${l.disc.value}%)` : ''}</span>`);
+  if (l.ebt) bits.push('<i class="tag ebt">EBT</i>');
+  if (l.age) bits.push(`<i class="tag age">${l.age}+</i>`);
+  if (l.dept) bits.push(`<span>Dept</span>`);
+  return bits.length ? `<div class="sub">${bits.join('')}</div>` : '';
+}
+function renderTicket() {
+  const c = calc(), list = $('#tlist');
+  if (!cart.lines.length && lastSale && mode === 'sell') {
+    list.innerHTML = `<div class="last">
+      <div class="lr"><span>Total:</span><span>${(lastSale.total / 100).toFixed(2)}</span></div>
+      <div class="lr"><span>Paid:</span><span>${(sum(lastSale.payments, p => p.tendered || p.amount) / 100).toFixed(2)}</span></div>
+      <div class="lr chg"><span>Change:</span><span>${(lastSale.change / 100).toFixed(2)}</span></div>
+      <div class="meta">Transaction ${esc(lastSale.trans)} · ${esc(lastSale.payments.map(payLabel).join(', '))} · ${fmtT(lastSale.at)}</div></div>`;
+  } else if (!cart.lines.length) {
+    list.innerHTML = `<div class="tempty"><b>READY</b><span>Scan an item, or type a price and tap a department.<br>Test codes: 1001, 1004, 3002, 4001 then Enter.</span></div>`;
+  } else {
+    list.innerHTML = c.rows.map(r => `<div class="trow${r.l.lid === selected ? ' sel' : ''}" data-act="select" data-lid="${r.l.lid}" tabindex="0">
+      <span class="nm">${esc(r.l.name)}</span><span>${r.l.weight ? '1' : r.l.qty}</span><span>${(r.l.price / 100).toFixed(2)}</span><span class="amt">${(r.gross / 100).toFixed(2)}</span>${lineSub(r)}</div>`).join('');
+    const s = list.querySelector('.sel'); if (s) s.scrollIntoView({ block: 'nearest' });
+  }
+  let dl = `<dt>Sub Total :</dt><dd>${money(c.gross)}</dd>`;
+  if (c.discount) dl += `<dt>Discount :</dt><dd class="minus">${neg(c.discount)}</dd>`;
+  dl += `<dt>Tax :</dt><dd>${money(c.tax)}</dd>`;
+  if (c.forgiven) dl += `<dt>EBT no tax :</dt><dd class="minus">${neg(c.forgiven)}</dd>`;
+  dl += `<dt class="tot">Total :</dt><dd class="tot">${money(c.total)}</dd>`;
+  if (payments.length) dl += `<dt>Paid :</dt><dd>${money(c.paid)}</dd><dt class="due">Balance :</dt><dd class="due">${money(c.balance)}</dd>`;
+  $('#tfoot').innerHTML = `<span class="tq">Total Qty : ${c.items}${c.eligible ? `<br><span class="tag ebt">EBT food ${money(c.eligible)}</span>` : ''}</span><dl>${dl}</dl>`;
+}
+
+function renderArea() {
+  const a = $('#area');
+  $('#keys').classList.toggle('tendering', mode === 'tender');
+  if (mode === 'tender') return renderTender(a);
+  if (tab === 'dept') {
+    a.innerHTML = `<div class="depts">${cfg().depts.map(d => `<button class="k dept ${d.g}" data-act="dept" data-id="${d.id}"><b>${esc(d.n)}</b><small>${deptTag(d)}</small></button>`).join('')}</div>`;
+  } else if (tab === 'items') {
+    const list = itemCat === 'quick' ? catalog().filter(p => p.quick) : catalog().filter(p => p.cat === itemCat);
+    a.innerHTML = `<div class="chips">${cats().map(([id, n]) => `<button class="k chip" data-act="icat" data-cat="${id}" aria-pressed="${itemCat === id}">${esc(n)}</button>`).join('')}</div>
+      <div class="items">${list.map(p => `<button class="k item" data-act="item" data-code="${esc(p.c)}"><b>${esc(p.n)}</b><span>${p.weight ? money(p.p) + '/lb' : money(p.p)}<small>${esc(p.c)}</small></span></button>`).join('') || '<p class="muted">No items.</p>'}</div>`;
+  } else {
+    const C = [
+      ...(HW ? [['hardware', 'Hardware Setup', 'Printer, drawer, updates', 1], ['closeApp', 'Close Register', 'Shut the register app', 1]] : []), ['cloud', cloudOn() ? 'Cloud: Connected' : 'Connect to Cloud', cloudOn() ? 'Sync status, disconnect' : 'Get items from Back Office', 1], ['backOffice', 'Back Office', cloudOn() ? 'Now in the Back Office app' : 'Items, prices, departments, reports', 1], ['priceCheck', 'Price Check', 'Type or scan, then tap'], ['qtyChange', 'Change Qty', 'Selected line'],
+      ['priceOverride', 'Price Change', 'Selected line', 1], ['itemDiscount', 'Item Discount', 'Selected line', 1],
+      ['voidSale', 'Void Transaction', 'Whole ticket', 1], ['refund', 'Refund / Return', 'Find the receipt', 1],
+      ['reprint', 'Reprint Receipt', 'Search old receipts'], ['cashDrop', 'Cash Drop', 'Drawer to safe'],
+      ['paidOut', 'Paid Out', 'Vendor, supplies', 1], ['addCash', 'Add Cash', 'Change to drawer', 1],
+      ['drawerReport', 'Drawer Report', 'Cash, card, EBT so far'], ['closeDrawer', 'End of Day', 'Count and close drawer', 1],
+      ['activity', 'Activity Log', 'Voids, refunds, overrides', 1], ['setup', 'Register Setup', 'Store and register #', 1],
+    ];
+    a.innerHTML = `<div class="cmds">${C.map(([id, t, s, m]) => `<button class="k cmd${m ? ' mgr' : ''}" data-act="cmd" data-cmd="${id}"><b>${t}</b><small>${s}</small></button>`).join('')}</div>`;
+  }
+}
+
+function payLabel(p) { return ({ cash: 'Cash', card: 'Card', credit: 'Credit', debit: 'Debit', ebt: 'EBT Food' }[p.type]) + (p.ref ? ' ' + p.ref : ''); }
+function quickCash(bal) { return [...new Set([Math.ceil(bal / 100) * 100, 500, 1000, 2000, 5000, 10000].filter(v => v >= bal))].sort((x, y) => x - y).slice(0, 5); }
+function renderTender(a) {
+  const c = calc(), bal = c.balance;
+  const typed = parseInt(buf || '0', 10);
+  let note = '';
+  if (c.ebtMax) note = `<div class="tnote"><b>EBT food items: ${money(c.ebtMax)}</b> (no tax when paid with EBT). Run EBT first, then cash or card for the rest.</div>`;
+  else if (c.eligible > c.ebtPaid && c.otherPaid) note = `<div class="tnote plain">EBT must be run before cash or card, so it's off for this ticket.</div>`;
+  a.innerHTML = `<div class="tender">
+    <div class="tdue"><div><div class="lbl">Amount due</div><div class="amt">${money(bal)}</div></div><button class="k" data-act="cancelPay" ${payments.length ? 'disabled' : ''}>Cancel</button></div>
+    ${note}
+    ${payments.length ? `<div class="paylist">${payments.map((p, i) => `<div><span>${esc(payLabel(p))} <b>${money(p.amount)}</b></span><button class="k redline" data-act="undoPay" data-i="${i}">Remove</button></div>`).join('')}</div>` : ''}
+    <div class="lbl2">Cash given</div>
+    <div class="quick"><button class="k" data-act="cashQuick" data-v="${bal}">Exact</button>${quickCash(bal).map(v => `<button class="k" data-act="cashQuick" data-v="${v}">${money(v)}</button>`).join('')}</div>
+    <div class="tbtns">
+      <button class="k cash" data-act="tenderCash">Cash ${money(typed || bal)}</button>
+      <button class="k card" data-act="tenderCard">Card Terminal</button>
+      <button class="k ebt" data-act="tenderEbt" ${c.ebtMax ? '' : 'disabled'}>EBT Food${c.ebtMax ? ' ' + money(Math.min(typed || c.ebtMax, c.ebtMax)) : ''}</button>
+    </div></div>`;
+}
+
+function renderBar() {
+  const empty = !cart.lines.length, tender = mode === 'tender', paying = payments.length > 0;
+  const set = (act, on) => { const b = document.querySelector(`#cmdbar [data-act="${act}"]`); if (b) b.disabled = !on; };
+  set('void', !empty && !paying); set('lastReceipt', !tender && !!lastSale); set('hold', !empty && !paying);
+  set('recall', !tender && empty); set('customer', !tender); set('openDrawer', !tender);
+  set('allDiscount', !empty && !paying); set('exit', !tender); set('pay', !empty && !tender);
+}
+function renderStatus() {
+  const d = drawer();
+  $('#status').innerHTML = `<span><b>${regNo()}</b></span><span>Trans <b>${nextTrans()}</b></span><span><b>${esc(user ? user.name : '')}</b></span>
+    <span><b>${esc(cfg().storeName)}</b> · ${esc(loc().town)}</span><span>${d ? 'Drawer open' : 'Drawer not started'}</span>${cloudBadge()}
+    ${HW && hwInfo ? `<span>v${esc(hwInfo.version)}${hwInfo.updateReady ? ' · update ready' : ''}</span>` : ''}<span class="clock">${new Date().toLocaleString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>`;
+}
+
+/* ================= entry (number pad + scanner) ================= */
+function npPress(k) {
+  if (!user || modalCfg || !$('#admin').hidden) return;
+  if (/^\d+$/.test(k)) { if (buf.length < 14) buf = (buf + k).slice(0, 14); }
+  else if (k === 'C') { if (buf) buf = ''; else qty = 1; }
+  else if (k === 'back') buf = buf.slice(0, -1);
+  else if (k === 'X') {
+    if (mode !== 'sell') return;
+    const n = parseInt(buf || '0', 10);
+    if (!n || n > 999) { toast('Type the quantity first, then tap X.'); return; }
+    qty = n; buf = '';
+  } else if (k === 'E') return enter();
+  if (lastSale && buf) lastSale = null;
+  renderTop(); if (mode === 'tender') renderArea();
+}
+function enter() {
+  if (mode === 'tender') { const v = parseInt(buf || '0', 10); return payCash(v || calc().balance); }
+  if (!buf) return;
+  const code = buf; buf = '';
+  const p = findCode(code);
+  if (p) return addItem(p);
+  render();
+  notFound(code);
+}
+
+/* ================= adding to the ticket ================= */
+function guardAdd() {
+  if (payments.length) { toast('Payment started. Finish it or remove the payment.'); return false; }
+  if (!drawer()) { startDrawer(); return false; }
+  return true;
+}
+function ageGate(src, then) {
+  if (!src.age || cart.ageOk >= src.age) return then();
+  const d = new Date(); d.setFullYear(d.getFullYear() - src.age);
+  const born = d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+  choose({
+    title: `Check ID · ${src.age}+`,
+    body: `<p><b>${esc(src.n)}</b> needs an ID check.</p><div class="callout warn"><div class="lbl2">Customer must be born on or before</div><div class="big">${born}</div></div>`,
+    buttons: [
+      { label: "Refused", cls: 'redline', run: () => audit('age.refused', src.n) },
+      { label: 'Enter birth date', run: () => setTimeout(() => dobPrompt(src, then)) },
+      { label: 'ID OK', cls: 'primary', run: () => { cart.ageOk = Math.max(cart.ageOk, src.age); audit('age.ok', `${src.n} (ID checked)`); then(); } },
+    ],
+  });
+}
+function dobPrompt(src, then) {
+  numberPrompt({
+    title: 'Birth date from ID', sub: 'Month, day, year: MM DD YYYY', mode: 'dob', okLabel: 'Check',
+    validate: v => {
+      if (v.length !== 8) return 'Enter all 8 digits.';
+      const m = +v.slice(0, 2), d = +v.slice(2, 4), y = +v.slice(4); const b = new Date(y, m - 1, d);
+      if (b.getMonth() !== m - 1 || b.getDate() !== d || y < 1900) return 'That date is not valid.';
+      const n = new Date(); let age = n.getFullYear() - y; if (n.getMonth() < m - 1 || (n.getMonth() === m - 1 && n.getDate() < d)) age--;
+      if (age < src.age) { audit('age.under', `${src.n}: customer is ${age}`); return `Customer is ${age}. Under ${src.age}: do not sell.`; }
+      return null;
+    },
+    onOk: () => { cart.ageOk = Math.max(cart.ageOk, src.age); audit('age.ok', `${src.n} (birth date)`); then(); render(); },
+  });
+}
+function pushLine(src, q, price, extra = {}) {
+  const l = Object.assign({ lid: uid(), cat: src.cat || '', pid: src.c || 'D-' + src.id, name: src.n, qty: q, price, base: price, cost: src.cost || 0, tax: src.tax, ebt: !!src.ebt, age: src.age || 0, weight: false, override: false, disc: null, dept: false }, extra);
+  if (!l.weight && !l.dept && !l.override) {
+    const same = cart.lines.find(x => x.pid === l.pid && !x.weight && !x.dept && !x.override && !x.disc && x.price === l.price);
+    if (same) { same.qty += q; selected = same.lid; return done(); }
+  }
+  cart.lines.push(l); selected = l.lid; done();
+  function done() { qty = 1; buf = ''; lastSale = null; render(); }
+}
+function addDept(d) {
+  if (!guardAdd()) return;
+  const price = parseInt(buf || '0', 10), q = qty;
+  const go = p => ageGate(d, () => pushLine({ ...d, n: d.n.toUpperCase() }, q, p, { dept: true }));
+  if (price > 0) { buf = ''; return go(price); }
+  numberPrompt({ title: d.n, sub: 'Enter the price.', mode: 'money', okLabel: 'Add', validate: v => (v > 0 ? null : 'Enter a price.'), onOk: go });
+}
+function addItem(p) {
+  if (!guardAdd()) return;
+  const q = qty;
+  ageGate(p, () => {
+    if (p.weight) return numberPrompt({ title: `Weigh: ${p.n}`, sub: `${money(p.p)} per lb. Enter the weight.`, mode: 'weight', okLabel: 'Add', validate: v => (v > 0 ? null : 'Enter a weight.'), onOk: w => pushLine(p, w, p.p, { weight: true }) });
+    pushLine(p, q, p.p);
+  });
+}
+function notFound(code) {
+  choose({
+    title: 'Item not found',
+    body: `<p>Code <b>${esc(code)}</b> is not in the system. To sell it now, type the price and tap a department.</p>${cloudOn() ? '<p class="muted">To add it for good, scan it with the Back Office app on your phone.</p>' : ''}`,
+    buttons: cloudOn() ? [{ label: 'OK', cls: 'primary' }] : [{ label: 'OK' }, { label: 'Add new item', cls: 'primary', run: () => setTimeout(() => requirePerm('item.create', 'Adding an item', ap => addItemForm(code, ap))) }],
+  });
+}
+function addItemForm(code, ap) {
+  openModal({
+    title: 'Add new item',
+    body: `<p class="muted">Code ${esc(code)}. Saved on this computer for testing.</p>
+      <div class="field"><label for="niName">Item name</label><input id="niName" maxlength="40" autofocus></div>
+      <div class="row2"><div class="field"><label for="niPrice">Price ($)</label><input id="niPrice" inputmode="decimal" placeholder="0.00"></div>
+        <div class="field"><label for="niCat">Group</label><select id="niCat">${cats().slice(1).map(([id, n]) => `<option value="${id}">${esc(n)}</option>`).join('')}</select></div></div>
+      <div class="row2"><div class="field"><label for="niTax">Tax</label><select id="niTax">${Object.entries(cfg().tax).map(([id, t]) => `<option value="${id}">${esc(t.name)}</option>`).join('')}</select></div>
+        <div class="field"><label for="niAge">ID check</label><select id="niAge"><option value="0">None</option><option value="18">18+</option><option value="21">21+</option></select></div></div>
+      <label class="check"><input type="checkbox" id="niEbt"> EBT eligible</label><div class="err" id="merr"></div>
+      <div class="m-actions"><button class="k" data-m="cancel">Cancel</button><button class="k primary" data-m="save">Save and add</button></div>`,
+    enter: 'save',
+    actions: {
+      cancel: closeModal,
+      save: () => {
+        const n = $('#niName').value.trim(), price = Math.round(parseFloat(($('#niPrice').value || '').replace(/[$,]/g, '')) * 100);
+        if (!n) return modalErr('Enter the item name.'); if (!(price > 0)) return modalErr('Enter a price.');
+        const item = { c: code, n, cat: $('#niCat').value, p: price, cost: 0, tax: $('#niTax').value, ebt: $('#niEbt').checked ? 1 : 0, age: +$('#niAge').value || 0 };
+        cfg().items.push(item); audit('item.create', `${code} ${n} ${money(price)}`, ap); closeModal(); addItem(item);
+      },
+    },
+  });
+}
+
+/* ================= paying ================= */
+function startPay() {
+  if (!cart.lines.length || mode === 'tender') return;
+  if (!drawer()) return startDrawer();
+  mode = 'tender'; buf = ''; qty = 1; render();
+}
+function payCash(t) {
+  const bal = calc().balance; if (t <= 0) return;
+  const applied = Math.min(t, bal);
+  payments.push({ type: 'cash', amount: applied, tendered: t, change: t - applied });
+  buf = ''; afterPay();
+}
+function cardPay() {
+  const bal = calc().balance, typed = parseInt(buf || '0', 10), amt = typed > 0 ? Math.min(typed, bal) : bal;
+  openModal({
+    title: 'Card terminal',
+    body: `<div class="callout"><div class="lbl2">Key this amount into the card terminal</div><div class="big">${money(amt)}</div></div>
+      <p>When the terminal says <b>Approved</b>, tap Approved.</p>
+      <div class="field"><label for="cardRef">Last 4 digits (optional)</label><input id="cardRef" inputmode="numeric" maxlength="4" autocomplete="off"></div>
+      <div class="m-actions"><button class="k redline" data-m="no">Declined</button><button class="k cardk" data-m="ok">Approved</button></div>`,
+    enter: 'ok',
+    actions: {
+      no: () => { closeModal(); toast('Declined. Try another card or payment.'); },
+      ok: () => { const r = ($('#cardRef').value || '').replace(/\D/g, ''); closeModal(); payments.push({ type: 'card', amount: amt, ref: r ? '*' + r : '' }); buf = ''; afterPay(); },
+    },
+  });
+}
+function ebtPay() {
+  const c = calc(); if (!c.ebtMax) return;
+  const typed = parseInt(buf || '0', 10), amt = typed > 0 ? Math.min(typed, c.ebtMax) : c.ebtMax;
+  openModal({
+    title: 'EBT Food',
+    body: `<div class="callout"><div class="lbl2">Key this into the card terminal as EBT Food</div><div class="big">${money(amt)}</div></div>
+      <p>Food items only, no tax. If the card balance is short, tap <b>Approved less</b> and enter what was approved.</p>
+      <div class="m-actions"><button class="k redline" data-m="no">Declined</button><button class="k" data-m="less">Approved less</button><button class="k ebtk" data-m="ok">Approved</button></div>`,
+    enter: 'ok',
+    actions: {
+      no: () => { closeModal(); toast('EBT declined. Use cash or card.'); },
+      less: () => { closeModal(); numberPrompt({ title: 'EBT amount approved', sub: `Up to ${money(amt)}.`, mode: 'money', okLabel: 'Record', validate: v => (v > 0 && v <= amt ? null : `Enter up to ${money(amt)}.`), onOk: v => { payments.push({ type: 'ebt', amount: v }); buf = ''; afterPay(); } }); },
+      ok: () => { closeModal(); payments.push({ type: 'ebt', amount: amt }); buf = ''; afterPay(); },
+    },
+  });
+}
+function afterPay() { if (calc().balance <= 0) return finalize(); render(); }
+
+function finalize() {
+  const c = calc(), d = drawer();
+  S.seq[regKey()] = (S.seq[regKey()] || 0) + 1;
+  const trans = pad5(S.seq[regKey()]);
+  let left = c.forgiven; const ebtRows = c.rows.filter(r => r.l.ebt);
+  const lines = c.rows.map(r => {
+    let charged = r.tax;
+    if (r.l.ebt && c.forgiven) {
+      const share = r === ebtRows[ebtRows.length - 1] ? left : Math.round(c.forgiven * (c.eligTax ? r.tax / c.eligTax : 0));
+      const take = Math.min(share, r.tax, left); charged = r.tax - take; left -= take;
+    }
+    return { lid: r.l.lid, pid: r.l.pid, cat: r.l.cat, name: r.l.name, qty: r.l.qty, price: r.l.price, base: r.l.base, weight: r.l.weight, dept: r.l.dept, gross: r.gross, disc: r.disc + r.alloc, net: r.net, tax: r.tax, chargedTax: charged, ebt: r.l.ebt, cost: r.l.cost, refunded: false };
+  });
+  const sale = { key: `${regKey()}-${trans}-${uid()}`, trans, at: Date.now(), store: S.store, reg: S.reg, cashier: user.name, lines, gross: c.gross, discount: c.discount, subtotal: c.subtotal, tax: c.tax, forgiven: c.forgiven, total: c.total,
+    payments: payments.map(p => ({ ...p })), change: sum(payments, p => p.change || 0), refunds: [], status: 'done' };
+  S.sales.push(sale); queueSale(sale); if (S.sales.length > 3000) S.sales.splice(0, S.sales.length - 3000);
+  if (d) { payments.forEach(p => { d.tot[p.type] = (d.tot[p.type] || 0) + p.amount; }); d.sales++; }
+  audit('sale', `#${trans} ${money(c.total)} ${payments.map(payLabel).join(' + ')}`);
+  lastSale = sale; cart = newCart(); payments = []; selected = null; mode = 'sell'; buf = ''; qty = 1;
+  save(); render();
+  hwAfterSale(sale);
+}
+
+/* ================= receipts ================= */
+let W = 40;
+const center = s => { s = s.slice(0, W); return ' '.repeat(Math.floor((W - s.length) / 2)) + s; };
+const lr = (l, r) => { const room = W - r.length - 1; l = l.length > room ? l.slice(0, room) : l; return l + ' '.repeat(W - l.length - r.length) + r; };
+const dash = '-'.repeat(W);
+function head(st, reg, at, extra) { const s = (cloudCfg && cloudCfg.store && st === S.store) ? cloudCfg.store : STORES[st]; return [center(cfg().storeName), center(s.addr), center(s.city), center(s.phone), '', lr(fmtDT(at), `Reg ${String(reg).padStart(2, '0')}`), ...extra, dash]; }
+function receiptText(sale) {
+  const o = head(sale.store, sale.reg, sale.at, [`Cashier: ${sale.cashier}`, `Trans #: ${sale.trans}`]);
+  sale.lines.forEach(l => {
+    o.push(lr((l.ebt ? 'F ' : '  ') + l.name, money(l.gross)));
+    if (l.weight) o.push(`    ${l.qty.toFixed(2)} lb @ ${money(l.price)}/lb`); else if (l.qty !== 1) o.push(`    ${l.qty} @ ${money(l.price)}`);
+    if (l.disc) o.push(lr('    Discount', neg(l.disc)));
+    if (l.refunded) o.push('    ** RETURNED **');
+  });
+  o.push(dash, lr('Sub Total', money(sale.gross)));
+  if (sale.discount) o.push(lr('Discount', neg(sale.discount)));
+  o.push(lr('Tax', money(sale.tax)));
+  if (sale.forgiven) o.push(lr('EBT tax exempt', neg(sale.forgiven)));
+  o.push(lr('TOTAL', money(sale.total)), '');
+  sale.payments.forEach(p => o.push(lr(payLabel(p), money(p.type === 'cash' ? p.tendered : p.amount))));
+  o.push(lr('Change', money(sale.change)));
+  sale.refunds.forEach(r => o.push('', lr(`Return ${fmtT(r.at)} ${r.method}`, neg(r.amount))));
+  o.push('', `Total Qty: ${sum(sale.lines, l => (l.weight ? 1 : l.qty))}`, 'F = EBT food item', '', center(cfg().footer), center('*** TEST RECEIPT - NOT A REAL SALE ***'));
+  return o.join('\n');
+}
+function showReceipt(sale, back) {
+  const canRefund = sale.lines.some(l => !l.refunded);
+  openModal({
+    title: `Receipt #${sale.trans}`, wide: true,
+    body: `<div class="receipt-wrap"><pre class="receipt">${esc(receiptText(sale))}</pre></div>
+      ${HW ? '' : '<p class="muted">Printing works in the installed Buddy\'s Register app.</p>'}
+      <div class="m-actions">${back ? '<button class="k" data-m="back">Back</button>' : ''}${HW ? '<button class="k" data-m="print">Print</button>' : ''}${canRefund ? '<button class="k redline" data-m="refund">Refund / Return</button>' : ''}<button class="k primary" data-m="close">Close</button></div>`,
+    enter: 'close',
+    actions: { close: closeModal, back: () => back && back(), print: () => { hwPrint(receiptText(sale) + '\n' + center('** REPRINT **')); toast('Reprinting.'); }, refund: () => requirePerm('refund', 'Refund', ap => refundModal(sale, ap)) },
+  });
+}
+function lookup() {
+  const draw = q => {
+    q = (q || '').trim();
+    const list = S.sales.filter(s => s.store === S.store && (!q || s.trans.includes(q) || money(s.total).includes(q))).slice(-80).reverse();
+    $('#lk').innerHTML = list.length ? list.map(s => `<button class="pick" data-m="open" data-t="${s.trans}" data-r="${s.reg}"><span>#${s.trans} · Reg ${String(s.reg).padStart(2, '0')}<small>${fmtDT(s.at)} · ${esc(s.cashier)} · ${esc(s.payments.map(payLabel).join(', '))}${s.status !== 'done' ? ' · RETURNED' : ''}</small></span><b>${money(s.total)}</b></button>`).join('') : '<p class="muted">No sales yet.</p>';
+  };
+  openModal({
+    title: 'Find a receipt', wide: true,
+    body: `<input class="search" id="lkq" placeholder="Transaction # or amount" autocomplete="off" autofocus><div class="picklist" id="lk"></div><div class="m-actions"><button class="k" data-m="close">Close</button></div>`,
+    onOpen: () => draw(''), onInput: () => draw($('#lkq').value),
+    actions: { close: closeModal, open: el => { const s = S.sales.find(x => x.trans === el.dataset.t && String(x.reg) === el.dataset.r && x.store === S.store); if (s) showReceipt(s, lookup); } },
+  });
+}
+function refundModal(sale, ap) {
+  const picked = new Set(), amt = l => l.net + l.chargedTax;
+  const types = [...new Set(sale.payments.map(p => p.type))];
+  let method = types.length === 1 ? types[0] : 'cash';
+  const draw = () => {
+    const total = sum(sale.lines.filter(l => picked.has(l.lid)), amt);
+    $('#rl').innerHTML = sale.lines.filter(l => !l.refunded).map(l => `<button class="pick" data-m="tog" data-lid="${l.lid}" aria-pressed="${picked.has(l.lid)}"><span>${esc(l.name)}<small>${l.weight ? l.qty.toFixed(2) + ' lb' : 'Qty ' + l.qty}${l.ebt ? ' · EBT item' : ''}</small></span><b>${money(amt(l))}</b></button>`).join('');
+    $('#rh').innerHTML = ['cash', 'card', 'ebt'].map(m => `<button class="k" data-m="how" data-how="${m}" aria-pressed="${method === m}">${({ cash: 'Cash', card: 'Card terminal', ebt: 'EBT' })[m]}</button>`).join('');
+    const go = $('#rgo'); go.textContent = `Refund ${money(total)}`; go.disabled = !total;
+  };
+  openModal({
+    title: `Return from #${sale.trans}`, wide: true,
+    body: `<p>Tap the items coming back. Paid with <b>${esc(sale.payments.map(payLabel).join(', '))}</b>. For an exchange, return the item here, then ring up the new one.</p>
+      <div class="picklist" id="rl"></div><div class="lbl2">Give money back as</div><div class="seg" id="rh" style="grid-template-columns:repeat(3,1fr)"></div><div class="err" id="merr"></div>
+      <div class="m-actions"><button class="k" data-m="cancel">Cancel</button><button class="k danger" id="rgo" data-m="go">Refund</button></div>`,
+    onOpen: draw,
+    actions: {
+      cancel: () => showReceipt(sale, lookup),
+      tog: el => { const id = el.dataset.lid; picked.has(id) ? picked.delete(id) : picked.add(id); draw(); },
+      how: el => { method = el.dataset.how; draw(); },
+      go: () => {
+        const ls = sale.lines.filter(l => picked.has(l.lid)); if (!ls.length) return;
+        if (method === 'ebt' && ls.some(l => !l.ebt)) return modalErr('Only EBT food items can go back on EBT.');
+        const total = sum(ls, amt); ls.forEach(l => { l.refunded = true; });
+        sale.refunds.push({ at: Date.now(), by: user.name, approver: ap.name, method, amount: total }); queueSale(sale);
+        sale.status = sale.lines.every(l => l.refunded) ? 'refunded' : 'partial';
+        const d = drawer(); if (d) d.ref[method] = (d.ref[method] || 0) + total; if (method === 'cash') hwDrawer();
+        audit('refund', `#${sale.trans} ${money(total)} as ${method}: ${ls.map(l => l.name).join(', ')}`, ap); save(); closeModal();
+        choose({ title: 'Return recorded', body: `<div class="callout ${method === 'cash' ? 'cash' : ''}"><div class="big">${money(total)}</div></div><p>${method === 'cash' ? 'Give the customer this cash from the drawer.' : `Run a ${money(total)} ${method === 'ebt' ? 'EBT Food' : 'card'} refund on the card terminal.`}</p>`, buttons: [{ label: 'Done', cls: 'primary' }] });
+      },
+    },
+  });
+}
+
+/* ================= hold ================= */
+function hold() {
+  if (!cart.lines.length || payments.length) return;
+  const c = calc();
+  S.held.push({ id: uid(), at: Date.now(), by: user.name, store: S.store, reg: S.reg, cart: JSON.parse(JSON.stringify(cart)), total: c.total, label: cart.lines[0].name, n: cart.lines.length });
+  audit('hold', `${cart.lines.length} lines ${money(c.total)}`);
+  cart = newCart(); selected = null; buf = ''; qty = 1; save(); render(); toast('Ticket held. Tap Recall Hold to bring it back.');
+}
+function recall() {
+  const list = S.held.filter(h => h.store === S.store);
+  if (!list.length) return toast('No held tickets.');
+  openModal({
+    title: 'Held tickets',
+    body: `<div class="picklist">${list.map(h => `<button class="pick" data-m="take" data-id="${h.id}"><span>${esc(h.label)}${h.n > 1 ? ` + ${h.n - 1} more` : ''}<small>${fmtT(h.at)} · ${esc(h.by)} · Reg ${String(h.reg).padStart(2, '0')}</small></span><b>${money(h.total)}</b></button>`).join('')}</div>
+      <div class="m-actions"><button class="k" data-m="close">Close</button></div>`,
+    actions: {
+      close: closeModal,
+      take: el => { const i = S.held.findIndex(h => h.id === el.dataset.id); if (i < 0) return; const h = S.held.splice(i, 1)[0]; cart = h.cart; selected = cart.lines.at(-1)?.lid || null; lastSale = null; audit('recall', `${h.label} ${money(h.total)}`); save(); closeModal(); render(); },
+    },
+  });
+}
+
+/* ================= line edits ================= */
+function needLine() { const l = selLine() || cart.lines.at(-1); if (!l) { toast('Ring up an item first.'); return null; } selected = l.lid; return l; }
+function voidLine() {
+  if (payments.length) return toast('Payment started. Remove the payment first.');
+  const l = needLine(); if (!l) return;
+  requirePerm('void.item', 'Void item', ap => {
+    cart.lines = cart.lines.filter(x => x !== l); selected = cart.lines.at(-1)?.lid || null;
+    audit('void.item', `${l.name} ${money(Math.round(l.qty * l.price))}`, ap); render();
+  });
+}
+function qtyChange() {
+  const l = needLine(); if (!l || payments.length) return;
+  const apply = (v, ap) => { if (v < l.qty) audit('qty.lower', `${l.name} ${l.qty} → ${v}`, ap); if (v <= 0) { cart.lines = cart.lines.filter(x => x !== l); selected = null; } else l.qty = v; render(); };
+  numberPrompt({
+    title: l.weight ? `Weight · ${l.name}` : `Quantity · ${l.name}`, mode: l.weight ? 'weight' : 'qty', initial: l.weight ? String(Math.round(l.qty * 100)) : String(l.qty), okLabel: 'Set',
+    onOk: v => (v < l.qty ? requirePerm('void.item', 'Lowering a quantity', ap => apply(v, ap)) : apply(v, user)),
+  });
+}
+function priceOverride() {
+  const l = needLine(); if (!l || payments.length) return;
+  requirePerm('price.override', 'Price change', ap => numberPrompt({
+    title: `New price · ${l.name}`, sub: `Now ${money(l.price)}${l.weight ? ' per lb' : ''}.`, mode: 'money', okLabel: 'Set price',
+    onOk: v => { audit('price.override', `${l.name} ${money(l.price)} → ${money(v)}`, ap); l.price = v; l.override = v !== l.base; render(); },
+  }));
+}
+function discountModal(target, ap) {
+  let type = 'pct'; makePad('modal', 'pct', '');
+  const l = target === 'item' ? needLine() : null; if (target === 'item' && !l) return;
+  const refresh = () => { document.querySelectorAll('#modal [data-m="pct"],#modal [data-m="amt"]').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === type)); drawPad('modal'); };
+  openModal({
+    title: target === 'item' ? `Discount · ${l.name}` : 'All Discount (whole ticket)',
+    body: `<div class="seg"><button class="k" data-m="pct">% off</button><button class="k" data-m="amt">$ off</button></div>${padBox('modal')}<div class="err" id="merr"></div>${keypad('modal')}
+      <div class="m-actions"><button class="k" data-m="cancel">Cancel</button><button class="k redline" data-m="remove">Remove</button><button class="k primary" data-m="apply">Apply</button></div>`,
+    onOpen: refresh, enter: 'apply',
+    actions: {
+      cancel: closeModal,
+      pct: () => { type = 'pct'; makePad('modal', 'pct', ''); refresh(); }, amt: () => { type = 'amt'; makePad('modal', 'money', ''); refresh(); },
+      remove: () => { if (l) l.disc = null; else cart.saleDisc = null; audit('discount.remove', l ? l.name : 'whole ticket', ap); closeModal(); render(); },
+      apply: () => {
+        const v = padValue('modal'); if (!v) return modalErr('Enter a discount.'); if (type === 'pct' && v > 100) return modalErr('At most 100%.');
+        const d = { type, value: v }, label = type === 'pct' ? `${v}%` : money(v);
+        if (l) { l.disc = d; audit('discount', `${label} off ${l.name}`, ap); } else { cart.saleDisc = d; audit('discount', `${label} off whole ticket`, ap); }
+        closeModal(); render();
+      },
+    },
+  });
+}
+function voidSale() {
+  if (!cart.lines.length) return toast('No ticket to void.');
+  requirePerm('void.sale', 'Void transaction', ap => {
+    const c = calc(), cards = payments.filter(p => p.type !== 'cash'), cash = sum(payments.filter(p => p.type === 'cash'), p => p.amount);
+    let warn = '';
+    if (cards.length) warn += `<div class="callout warn">Also void on the card terminal: <b>${cards.map(p => `${payLabel(p)} ${money(p.amount)}`).join(', ')}</b></div>`;
+    if (cash) warn += `<div class="callout cash">Give back <b>${money(cash)}</b> cash.</div>`;
+    choose({ title: 'Void this ticket?', body: `<p>${cart.lines.length} line(s), total ${money(c.total)}.</p>${warn}`, buttons: [{ label: 'Keep' }, { label: 'Void ticket', cls: 'danger', run: () => {
+      audit('void.sale', `${cart.lines.map(l => l.name).join(', ')} ${money(c.total)}`, ap); cart = newCart(); payments = []; selected = null; mode = 'sell'; buf = ''; qty = 1;
+    } }] });
+  });
+}
+function priceCheck() {
+  if (!buf) return toast('Type or scan the item code first, then tap Price Check.');
+  const p = findCode(buf); buf = ''; render();
+  if (!p) return choose({ title: 'Price Check', body: '<p>That code is not in the system.</p>', buttons: [{ label: 'OK', cls: 'primary' }] });
+  choose({ title: 'Price Check', body: `<p><b>${esc(p.n)}</b> · code ${esc(p.c)}</p><div class="big">${money(p.p)}${p.weight ? ' /lb' : ''}</div><p class="muted">${taxOf(p.tax).name}${p.ebt ? ' · EBT food' : ''}${p.age ? ` · ID ${p.age}+` : ''}</p>`, buttons: [{ label: 'OK' }, { label: 'Add to ticket', cls: 'primary', run: () => addItem(p) }] });
+}
+
+/* ================= drawer ================= */
+const cardTot = t => (t.card || 0) + (t.credit || 0) + (t.debit || 0);
+const expected = d => d.opening + (d.tot.cash || 0) - (d.ref.cash || 0) - d.drops - d.payouts + d.adds;
+function startDrawer(then) {
+  numberPrompt({
+    title: 'Start the drawer', sub: `Count the starting cash in register ${regNo()}.`, mode: 'money', okLabel: 'Start drawer', cancelLabel: 'Later',
+    onOk: v => { S.drawers[regKey()] = { id: uid(), openedAt: Date.now(), openedBy: user.name, opening: v, tot: {}, ref: {}, drops: 0, payouts: 0, adds: 0, noSales: 0, sales: 0 }; audit('drawer.start', `Starting cash ${money(v)}`); save(); render(); if (then) then(); },
+  });
+}
+function cashMove(field, title, sub, ap) {
+  const d = drawer(); if (!d) return startDrawer();
+  numberPrompt({ title, sub, mode: 'money', okLabel: 'Save', validate: v => (v > 0 ? null : 'Enter an amount.'),
+    onOk: v => { d[field] += v; audit('cash.' + field, `${title} ${money(v)}`, ap); save(); render(); toast(`${title} ${money(v)} saved.`); } });
+}
+function drawerReport() {
+  const d = drawer(); if (!d) return startDrawer();
+  const card = cardTot(d.tot);
+  choose({
+    title: `Drawer · register ${regNo()}`,
+    body: `<p class="muted">Started ${fmtDT(d.openedAt)} by ${esc(d.openedBy)} · ${d.sales} sales</p><div class="stats">
+      <span>Starting cash</span><span>${money(d.opening)}</span><span>Cash sales</span><span>${money(d.tot.cash || 0)}</span>
+      <span>Cash returns</span><span>${neg(d.ref.cash || 0)}</span><span>Cash drops</span><span>${neg(d.drops)}</span>
+      <span>Paid outs</span><span>${neg(d.payouts)}</span><span>Cash added</span><span>${money(d.adds)}</span>
+      <span class="strong">Cash that should be in the drawer</span><span class="strong">${money(expected(d))}</span>
+      <span>Card terminal</span><span>${money(card)}</span><span>EBT Food</span><span>${money(d.tot.ebt || 0)}</span></div>`,
+    buttons: [{ label: 'Close', cls: 'primary' }],
+  });
+}
+function closeDrawer(ap) {
+  if (cart.lines.length) return toast('Finish, hold or void the ticket first.');
+  const d = drawer(); if (!d) return toast('No drawer is open.');
+  numberPrompt({
+    title: 'End of day · count the drawer', sub: 'Count all the cash in the drawer and enter the total.', mode: 'money', okLabel: 'Close drawer',
+    onOk: counted => {
+      const exp = expected(d), diff = counted - exp, card = cardTot(d.tot);
+      S.closings.push({ ...d, closedAt: Date.now(), closedBy: ap.name, counted, expected: exp, overShort: diff, store: S.store, reg: S.reg });
+      delete S.drawers[regKey()];
+      audit('drawer.close', `Expected ${money(exp)} counted ${money(counted)} ${diff >= 0 ? 'over' : 'short'} ${money(Math.abs(diff))}`, ap); save();
+      const o = head(S.store, S.reg, Date.now(), ['END OF DAY - DRAWER CLOSE', `Closed by: ${ap.name}`]);
+      o.push(lr('Started', fmtDT(d.openedAt)), lr('Sales', String(d.sales)), '', lr('Starting cash', money(d.opening)), lr('Cash sales', money(d.tot.cash || 0)), lr('Cash returns', neg(d.ref.cash || 0)),
+        lr('Cash drops', neg(d.drops)), lr('Paid outs', neg(d.payouts)), lr('Cash added', money(d.adds)), dash, lr('Expected cash', money(exp)), lr('Counted cash', money(counted)),
+        lr(diff >= 0 ? 'OVER' : 'SHORT', money(Math.abs(diff))), dash, lr('Card terminal', money(card)),
+        lr('EBT Food', money(d.tot.ebt || 0)), lr('Card returns', neg(cardTot(d.ref))), lr('EBT returns', neg(d.ref.ebt || 0)), lr('No sales', String(d.noSales)), '',
+        'Check Card and EBT totals against', "the card terminal's end-of-day report.");
+      openModal({ title: diff === 0 ? 'Drawer balanced' : diff > 0 ? `Over ${money(diff)}` : `Short ${money(-diff)}`, wide: true, closable: false,
+        body: `<div class="receipt-wrap"><pre class="receipt">${esc(o.join('\n'))}</pre></div><div class="m-actions">${HW ? '<button class="k" data-m="print">Print report</button>' : ''}<button class="k primary" data-m="out">Sign out</button></div>`,
+        enter: 'out', actions: { print: () => hwPrint(o.join('\n')), out: () => { closeModal(); signOut(true); } } });
+    },
+  });
+}
+
+/* ================= commands ================= */
+function activityLog() {
+  const rows = S.audit.filter(a => a.store === S.store).slice(-200).reverse();
+  openModal({ title: 'Activity log', wide: true,
+    body: `<div class="table-wrap"><table class="log"><thead><tr><th>Time</th><th>Who</th><th>What</th><th>Details</th></tr></thead><tbody>${rows.map(a => `<tr><td>${fmtDT(a.at)}<br><span class="muted">Reg ${String(a.reg).padStart(2, '0')}</span></td><td>${esc(a.user)}${a.approver ? `<br><span class="muted">OK by ${esc(a.approver)}</span>` : ''}</td><td>${esc(a.action)}</td><td>${esc(a.detail)}</td></tr>`).join('') || '<tr><td colspan="4">Nothing yet.</td></tr>'}</tbody></table></div><div class="m-actions"><button class="k primary" data-m="close">Close</button></div>`,
+    actions: { close: closeModal } });
+}
+function setup(ap) {
+  if (cart.lines.length) return toast('Finish, hold or void the ticket first.');
+  let st = S.store, rg = S.reg;
+  const draw = () => {
+    $('#su1').innerHTML = Object.entries(STORES).map(([k, s]) => `<button class="pick" data-m="st" data-k="${k}" aria-pressed="${st === k}"><span>${esc(s.town)}<small>${esc(s.addr)}, ${esc(s.city)}</small></span></button>`).join('');
+    $('#su2').innerHTML = [1, 2, 3, 4, 5, 6].map(n => `<button class="k" data-m="rg" data-n="${n}" aria-pressed="${rg === n}">${String(n).padStart(2, '0')}</button>`).join('');
+  };
+  openModal({ title: 'Register setup',
+    body: `<div class="lbl2">Store</div><div class="picklist" id="su1"></div><div class="lbl2">Register number</div><div class="seg" id="su2" style="grid-template-columns:repeat(6,1fr)"></div>
+      <div class="m-actions"><button class="k" data-m="close">Cancel</button><button class="k redline" data-m="reset">Clear test data</button><button class="k primary" data-m="save">Save</button></div>`,
+    onOpen: draw,
+    actions: {
+      close: closeModal, st: el => { st = el.dataset.k; draw(); }, rg: el => { rg = +el.dataset.n; draw(); },
+      save: () => { S.store = st; S.reg = rg; audit('register.setup', `${st} register ${rg}`, ap); save(); closeModal(); lastSale = null; render(); if (!drawer()) startDrawer(); },
+      reset: () => choose({ title: 'Clear test data?', body: '<p>Deletes all test sales, held tickets, drawers and the activity log on this computer.</p>', buttons: [{ label: 'Keep' }, { label: 'Clear everything', cls: 'danger', run: () => { S = Object.assign(fresh(), { store: S.store, reg: S.reg }); lastSale = null; save(); signOut(true); } }] }),
+    } });
+}
+const CMD = {
+  hardware: () => requirePerm('settings', 'Hardware setup', hardwareSetup),
+  closeApp: () => requirePerm('drawer.close', 'Closing the register', () => {
+    if (cart.lines.length || payments.length) return toast('Finish, hold or void the ticket first.');
+    choose({ title: 'Close the register?', body: '<p>The app shuts down. Open it again from the desktop icon.</p>', buttons: [{ label: 'Keep open' }, { label: 'Close register', cls: 'danger', run: () => { audit('app.close', 'Register closed'); save(); HW.quit(); } }] });
+  }),
+  cloud: () => (cloudOn() ? connectCloud() : requirePerm('settings', 'Connecting to the cloud', connectCloud)),
+  backOffice: () => (cloudOn() ? toast('Items, prices and employees are managed in the Back Office app now.') : requirePerm('backoffice', 'Back Office', openAdmin)),
+  priceCheck, qtyChange, priceOverride,
+  itemDiscount: () => requirePerm('discount', 'Item discount', ap => discountModal('item', ap)),
+  voidSale,
+  refund: lookup,
+  reprint: lookup,
+  cashDrop: () => requirePerm('cash.drop', 'Cash drop', ap => cashMove('drops', 'Cash drop', 'Cash taken from the drawer to the safe.', ap)),
+  paidOut: () => requirePerm('cash.payout', 'Paid out', ap => cashMove('payouts', 'Paid out', 'Cash paid out (vendor, supplies).', ap)),
+  addCash: () => requirePerm('cash.add', 'Add cash', ap => cashMove('adds', 'Add cash', 'Cash put into the drawer.', ap)),
+  drawerReport,
+  closeDrawer: () => requirePerm('drawer.close', 'End of day', closeDrawer),
+  activity: () => requirePerm('reports', 'Activity log', activityLog),
+  setup: () => (cloudOn() ? toast('This register is connected. Use Cloud: Connected to change it.') : requirePerm('settings', 'Register setup', setup)),
+};
+
+/* ================= back office ================= */
+let aTab = 'sales', aUser = null, aQ = '', aCat = 'all', aDate = '';
+const localDay = t => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const parseMoney = v => { const n = parseFloat(String(v ?? '').replace(/[$,\s]/g, '')); return Number.isFinite(n) ? Math.round(n * 100) : NaN; };
+const dollars = c => (c / 100).toFixed(2);
+const marginOf = (p, c) => (p > 0 && c > 0 ? ((p - c) / p * 100).toFixed(1) + '%' : '—');
+const catName = id => (cfg().cats.find(c => c.id === id) || {}).n || '';
+const ownerOnly = () => can(aUser, 'settings');
+const A_TABS = [['sales', 'Sales Today'], ['items', 'Items'], ['depts', 'Departments'], ['groups', 'Touch Groups'], ['tax', 'Tax Rates', 1], ['staff', 'Employees', 1], ['store', 'Store & Receipt', 1], ['backup', 'Backup', 1]];
+const opt = (list, cur) => list.map(([v, n]) => `<option value="${esc(v)}"${String(v) === String(cur) ? ' selected' : ''}>${esc(n)}</option>`).join('');
+const taxOpts = cur => opt(Object.entries(cfg().tax).map(([id, t]) => [id, `${t.name} (${t.rate}%)`]), cur);
+const ageOpts = cur => opt([[0, 'None'], [18, '18+'], [21, '21+']], cur || 0);
+
+function openAdmin(ap) { aUser = ap; aDate = localDay(Date.now()); audit('backoffice.open', 'Back Office opened', ap); $('#admin').hidden = false; renderAdmin(); }
+function closeAdmin() { $('#admin').hidden = true; aUser = null; render(); }
+
+function renderAdmin() {
+  if ($('#admin').hidden) return;
+  $('#admin').innerHTML = `<header class="a-top"><h1>BACK OFFICE</h1><span class="who">${esc(cfg().storeName)} · ${esc(loc().town)} · ${esc(aUser.name)}${aUser.name !== ROLES[aUser.role].name ? ' · ' + ROLES[aUser.role].name : ''}</span><button class="k" data-a="close">Back to Register</button></header>
+    <div class="a-body"><nav class="a-nav">${A_TABS.map(([id, n, o]) => `<button data-a="tab" data-t="${id}" aria-current="${aTab === id}">${n}${o ? '<small>Owner</small>' : ''}</button>`).join('')}</nav>
+    <div class="a-main" id="aMain"></div></div>`;
+  const t = A_TABS.find(x => x[0] === aTab);
+  if (t[2] && !ownerOnly()) {
+    $('#aMain').innerHTML = `<div class="a-head"><div><h2>${t[1]}</h2></div></div><div class="callout warn">Only the owner can change this. Go back to the register and open Back Office with the owner PIN.</div>`;
+    return;
+  }
+  $('#aMain').innerHTML = { sales: aSales, items: aItems, depts: aDepts, groups: aGroups, tax: aTax, staff: aStaff, store: aStore, backup: aBackup }[aTab]();
+}
+
+/* ----- Sales today ----- */
+function aSales() {
+  const day = aDate, mine = S.sales.filter(s => s.store === S.store);
+  const sales = mine.filter(s => localDay(s.at) === day);
+  const net = sum(sales, s => s.total), taxC = sum(sales, s => s.tax - s.forgiven);
+  const pay = { cash: 0, card: 0, ebt: 0 };
+  sales.forEach(s => s.payments.forEach(p => { pay[p.type === 'cash' ? 'cash' : p.type === 'ebt' ? 'ebt' : 'card'] += p.amount; }));
+  const refunds = []; mine.forEach(s => s.refunds.forEach(r => { if (localDay(r.at) === day) refunds.push(r); }));
+  const groups = {}, items = {}; let profit = 0, costed = 0;
+  sales.forEach(s => s.lines.forEach(l => {
+    const g = l.dept ? l.name : (catName(l.cat) || 'Other items');
+    groups[g] = (groups[g] || 0) + l.net;
+    const it = items[l.name] || (items[l.name] = { q: 0, amt: 0 }); it.q += l.weight ? 1 : l.qty; it.amt += l.net;
+    if (l.cost > 0) { profit += l.net - Math.round(l.cost * l.qty); costed += l.net; }
+  }));
+  const voids = S.audit.filter(a => a.store === S.store && localDay(a.at) === day && a.action.startsWith('void')).length;
+  const discounts = sum(sales, s => s.discount);
+  const rowsG = Object.entries(groups).sort((a, b) => b[1] - a[1]);
+  const rowsI = Object.entries(items).sort((a, b) => b[1].amt - a[1].amt).slice(0, 10);
+  return `<div class="a-head"><div><h2>Sales</h2><p>${esc(loc().town)} store · all registers on this computer</p></div>
+      <div class="tools"><label class="muted" for="aDate">Day</label><input type="date" id="aDate" value="${day}"></div></div>
+    <div class="kpis">
+      <div class="kpi"><div class="lbl2">Sales (after tax)</div><b>${money(net)}</b></div>
+      <div class="kpi"><div class="lbl2">Transactions</div><b>${sales.length}</b></div>
+      <div class="kpi"><div class="lbl2">Average sale</div><b>${money(sales.length ? Math.round(net / sales.length) : 0)}</b></div>
+      <div class="kpi"><div class="lbl2">Tax collected</div><b>${money(taxC)}</b></div>
+    </div>
+    <div class="two">
+      <div class="card-box"><table class="dt"><thead><tr><th>Payment type</th><th class="r">Amount</th></tr></thead><tbody>
+        <tr><td>Cash</td><td class="r">${money(pay.cash)}</td></tr><tr><td>Card terminal</td><td class="r">${money(pay.card)}</td></tr><tr><td>EBT Food</td><td class="r">${money(pay.ebt)}</td></tr>
+        <tr class="tot"><td>Total</td><td class="r">${money(pay.cash + pay.card + pay.ebt)}</td></tr></tbody></table>
+        <p class="foot">Card and EBT totals should match the card terminal's end-of-day report.</p></div>
+      <div class="card-box"><table class="dt"><thead><tr><th>Returns, voids, discounts</th><th class="r"></th></tr></thead><tbody>
+        <tr><td>Returns (${refunds.length})</td><td class="r">${neg(sum(refunds, r => r.amount))}</td></tr>
+        <tr><td>Voids (items + tickets)</td><td class="r">${voids}</td></tr>
+        <tr><td>Discounts given</td><td class="r">${neg(discounts)}</td></tr>
+        <tr><td>Gross profit on items with a cost</td><td class="r">${money(profit)}${costed ? ` · ${(profit / costed * 100).toFixed(1)}%` : ''}</td></tr></tbody></table>
+        <p class="foot">Profit counts only items that have a cost entered. Department sales have no cost.</p></div>
+    </div>
+    <div class="two">
+      <div class="card-box"><table class="dt"><thead><tr><th>By department / group</th><th class="r">Sales before tax</th></tr></thead><tbody>
+        ${rowsG.map(([g, v]) => `<tr><td>${esc(g)}</td><td class="r">${money(v)}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No sales this day.</td></tr>'}</tbody></table></div>
+      <div class="card-box"><table class="dt"><thead><tr><th>Top items</th><th class="r">Qty</th><th class="r">Sales</th></tr></thead><tbody>
+        ${rowsI.map(([n, v]) => `<tr><td>${esc(n)}</td><td class="r">${v.q}</td><td class="r">${money(v.amt)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No sales this day.</td></tr>'}</tbody></table></div>
+    </div>`;
+}
+
+/* ----- Items ----- */
+const itemList = () => { const q = aQ.trim().toLowerCase(); return catalog().filter(p => (aCat === 'all' || p.cat === aCat) && (!q || p.n.toLowerCase().includes(q) || p.c.toLowerCase().includes(q))); };
+function itemRows() {
+  const list = itemList();
+  return list.map(p => `<tr class="click" data-a="editItem" data-c="${esc(p.c)}"><td class="mono">${esc(p.c)}</td>
+    <td><b>${esc(p.n)}</b> ${p.ebt ? '<i class="tag ebt">EBT</i>' : ''}${p.age ? ` <i class="tag age">${p.age}+</i>` : ''}${p.weight ? ' <i class="tag ovr">Per lb</i>' : ''}${p.quick ? ' <i class="tag hot">Favorite</i>' : ''}</td>
+    <td>${esc(catName(p.cat))}</td><td class="r">${money(p.p)}${p.weight ? '/lb' : ''}</td><td class="r">${p.cost ? money(p.cost) : '—'}</td><td class="r">${marginOf(p.p, p.cost)}</td><td>${esc(taxOf(p.tax).name)}</td></tr>`).join('')
+    || '<tr><td colspan="7" class="muted">No items match.</td></tr>';
+}
+function aItems() {
+  return `<div class="a-head"><div><h2>Items</h2><p><span id="aCount">${itemList().length}</span> of ${catalog().length} items · tap a row to edit</p></div>
+      <div class="tools"><button class="k" data-a="bulk">Change prices</button><button class="k primary" data-a="addItem">+ Add item</button></div></div>
+    <div class="tools"><input class="search" id="aQ" placeholder="Search name or barcode" value="${esc(aQ)}" autocomplete="off"><select class="search" id="aCat" style="max-width:220px">${opt([['all', 'All groups'], ...cfg().cats.map(c => [c.id, c.n])], aCat)}</select></div>
+    <div class="card-box"><div class="table-wrap" style="max-height:none"><table class="dt"><thead><tr><th>Barcode / PLU</th><th>Item</th><th>Group</th><th class="r">Price</th><th class="r">Cost</th><th class="r">Margin</th><th>Tax</th></tr></thead>
+      <tbody id="itemRows">${itemRows()}</tbody></table></div></div>
+    <p class="muted">Your real items will be imported from EBSPOS. These are samples for testing.</p>`;
+}
+function itemForm(orig) {
+  const p = orig || { c: '', n: '', cat: (cfg().cats[0] || {}).id || '', p: 0, cost: 0, tax: 'gen', ebt: 0, age: 0, weight: 0, quick: 0 };
+  openModal({
+    title: orig ? 'Edit item' : 'Add item', wide: true,
+    body: `<div class="row2"><div class="field"><label for="fC">Barcode / PLU</label><input id="fC" value="${esc(p.c)}" maxlength="20" ${orig ? '' : 'autofocus'}></div>
+        <div class="field"><label for="fN">Item name (prints on receipt)</label><input id="fN" value="${esc(p.n)}" maxlength="40" ${orig ? 'autofocus' : ''}></div></div>
+      <div class="row3"><div class="field"><label for="fP">Price ($)</label><input id="fP" inputmode="decimal" value="${p.p ? dollars(p.p) : ''}" placeholder="0.00"></div>
+        <div class="field"><label for="fCost">Cost ($)</label><input id="fCost" inputmode="decimal" value="${p.cost ? dollars(p.cost) : ''}" placeholder="0.00"></div>
+        <div class="field"><label>Margin</label><div class="readout" id="fM">${marginOf(p.p, p.cost)}</div></div></div>
+      <div class="row3"><div class="field"><label for="fG">Touch group</label><select id="fG">${opt(cfg().cats.map(c => [c.id, c.n]), p.cat)}</select></div>
+        <div class="field"><label for="fT">Tax</label><select id="fT">${taxOpts(p.tax)}</select></div>
+        <div class="field"><label for="fA">ID check</label><select id="fA">${ageOpts(p.age)}</select></div></div>
+      <div class="checks"><label class="check"><input type="checkbox" id="fE" ${p.ebt ? 'checked' : ''}> EBT eligible</label>
+        <label class="check"><input type="checkbox" id="fW" ${p.weight ? 'checked' : ''}> Sold by the pound</label>
+        <label class="check"><input type="checkbox" id="fQ" ${p.quick ? 'checked' : ''}> Show in Favorites</label></div>
+      <div class="err" id="merr"></div>
+      <div class="m-actions">${orig ? '<button class="k redline" data-m="del">Delete</button>' : ''}<button class="k" data-m="cancel">Cancel</button><button class="k primary" data-m="save">Save item</button></div>`,
+    enter: 'save',
+    onInput: () => { $('#fM').textContent = marginOf(parseMoney($('#fP').value), parseMoney($('#fCost').value)); },
+    actions: {
+      cancel: closeModal,
+      del: () => choose({ title: 'Delete item?', body: `<p><b>${esc(orig.n)}</b> (${esc(orig.c)}) will be removed from the register. Past sales keep their records.</p>`,
+        buttons: [{ label: 'Keep' }, { label: 'Delete', cls: 'danger', run: () => { cfg().items.splice(cfg().items.indexOf(orig), 1); audit('item.delete', `${orig.c} ${orig.n}`, aUser); save(); renderAdmin(); } }] }),
+      save: () => {
+        const c = $('#fC').value.trim(), n = $('#fN').value.trim(), price = parseMoney($('#fP').value), cost = $('#fCost').value.trim() ? parseMoney($('#fCost').value) : 0;
+        if (!/^[A-Za-z0-9-]{1,20}$/.test(c)) return modalErr('Enter a barcode or PLU: letters, numbers or dashes.');
+        if (catalog().some(x => x.c === c && x !== orig)) return modalErr(`Barcode ${c} is already used by another item.`);
+        if (!n) return modalErr('Enter the item name.');
+        if (!(price > 0)) return modalErr('Enter a price above $0.00.');
+        if (Number.isNaN(cost) || cost < 0) return modalErr('Cost must be a dollar amount.');
+        const next = { c, n, cat: $('#fG').value, p: price, cost, tax: $('#fT').value, ebt: $('#fE').checked ? 1 : 0, age: +$('#fA').value || 0, weight: $('#fW').checked ? 1 : 0, quick: $('#fQ').checked ? 1 : 0 };
+        if (orig) {
+          const changes = [], priceChanged = orig.p !== price;
+          if (orig.p !== price) changes.push(`price ${money(orig.p)} → ${money(price)}`);
+          if (orig.cost !== cost) changes.push(`cost ${money(orig.cost || 0)} → ${money(cost)}`);
+          if (orig.n !== n) changes.push(`name "${orig.n}" → "${n}"`);
+          Object.assign(orig, next);
+          audit(priceChanged ? 'price.change' : 'item.edit', `${c} ${n}${changes.length ? ': ' + changes.join(', ') : ''}`, aUser);
+        } else { cfg().items.push(next); audit('item.create', `${c} ${n} ${money(price)}`, aUser); }
+        save(); closeModal(); renderAdmin(); toast(orig ? 'Item saved.' : 'Item added.');
+      },
+    },
+  });
+}
+function bulkPrice() {
+  const list = itemList(); if (!list.length) return toast('No items in the list.');
+  let how = 'pct';
+  const calcNew = p => {
+    const v = ($('#bV').value || '').trim().replace('−', '-'); if (!v) return null;
+    if (how === 'pct') { const n = parseFloat(v); return Number.isFinite(n) ? Math.max(0, Math.round(p.p * (1 + n / 100))) : null; }
+    const c = parseMoney(v); if (Number.isNaN(c)) return null;
+    return how === 'amt' ? Math.max(0, p.p + c) : Math.max(0, c);
+  };
+  const draw = () => {
+    document.querySelectorAll('#modal [data-m="h"]').forEach(b => b.setAttribute('aria-pressed', b.dataset.h === how));
+    $('#bL').textContent = { pct: 'Percent to change (5 raises 5%, -5 lowers 5%)', amt: 'Dollars to change (0.25 raises 25¢, -0.25 lowers)', set: 'New price for every item listed ($)' }[how];
+    $('#bP').innerHTML = list.slice(0, 200).map(p => { const n = calcNew(p); return `<tr><td>${esc(p.n)}</td><td class="r">${money(p.p)}</td><td class="r"><b>${n == null ? '—' : money(n)}</b></td><td class="r">${n == null ? '' : marginOf(n, p.cost)}</td></tr>`; }).join('');
+  };
+  openModal({
+    title: `Change prices · ${list.length} item${list.length === 1 ? '' : 's'}`, wide: true,
+    body: `<p class="muted">Applies to the items in the list now${aQ || aCat !== 'all' ? ' (filtered)' : ''}. Check the new prices before you apply.</p>
+      <div class="seg" style="grid-template-columns:repeat(3,1fr)"><button class="k" data-m="h" data-h="pct">Percent</button><button class="k" data-m="h" data-h="amt">Dollars</button><button class="k" data-m="h" data-h="set">Set price</button></div>
+      <div class="field"><label for="bV" id="bL"></label><input id="bV" inputmode="decimal" autocomplete="off" autofocus></div>
+      <div class="card-box"><div class="table-wrap" style="max-height:34vh"><table class="dt"><thead><tr><th>Item</th><th class="r">Now</th><th class="r">New</th><th class="r">Margin</th></tr></thead><tbody id="bP"></tbody></table></div></div>
+      <div class="err" id="merr"></div>
+      <div class="m-actions"><button class="k" data-m="cancel">Cancel</button><button class="k primary" data-m="apply">Apply new prices</button></div>`,
+    onOpen: draw, onInput: draw, enter: 'apply',
+    actions: {
+      cancel: closeModal, h: el => { how = el.dataset.h; draw(); },
+      apply: () => {
+        const news = list.map(p => [p, calcNew(p)]);
+        if (news.some(([, n]) => n == null)) return modalErr('Enter a number first.');
+        if (news.some(([, n]) => n <= 0)) return modalErr('That would make some prices $0.00 or less.');
+        const changed = news.filter(([p, n]) => n !== p.p);
+        changed.forEach(([p, n]) => { audit('price.change', `${p.c} ${p.n}: ${money(p.p)} → ${money(n)} (bulk)`, aUser); p.p = n; });
+        save(); closeModal(); renderAdmin(); toast(`${changed.length} price${changed.length === 1 ? '' : 's'} changed.`);
+      },
+    },
+  });
+}
+
+/* ----- Departments ----- */
+function aDepts() {
+  const d = cfg().depts;
+  return `<div class="a-head"><div><h2>Departments</h2><p>The keys on the register's Departments screen, in this order. 14 fit without scrolling.</p></div>
+      <div class="tools"><button class="k primary" data-a="addDept">+ Add department</button></div></div>
+    <div class="card-box"><table class="dt"><thead><tr><th>Key</th><th>Tax</th><th>EBT</th><th>ID check</th><th class="r">Order</th><th></th></tr></thead><tbody>
+      ${d.map((x, i) => `<tr><td><span class="swatch dept ${x.g}">${esc(x.n)}</span></td><td>${esc(taxOf(x.tax).name)}</td><td>${x.ebt ? 'Yes' : 'No'}</td><td>${x.age ? x.age + '+' : '—'}</td>
+        <td class="r"><button class="k sm" data-a="dMove" data-i="${i}" data-d="-1" ${i ? '' : 'disabled'} aria-label="Move up">▲</button> <button class="k sm" data-a="dMove" data-i="${i}" data-d="1" ${i < d.length - 1 ? '' : 'disabled'} aria-label="Move down">▼</button></td>
+        <td class="r"><button class="k sm" data-a="editDept" data-i="${i}">Edit</button></td></tr>`).join('')}</tbody></table></div>
+    <p class="muted">Colors: green = EBT food, orange = hot food, rose = needs ID, blue = general.</p>`;
+}
+function deptForm(orig) {
+  const d = orig || { n: '', g: 'gen', tax: 'gen', ebt: 0, age: 0 };
+  openModal({
+    title: orig ? 'Edit department' : 'Add department',
+    body: `<div class="field"><label for="dN">Name on the key</label><input id="dN" value="${esc(d.n)}" maxlength="24" autofocus></div>
+      <div class="row2"><div class="field"><label for="dG">Key color</label><select id="dG">${opt(Object.entries(COLORS), d.g)}</select></div>
+        <div class="field"><label for="dT">Tax</label><select id="dT">${taxOpts(d.tax)}</select></div></div>
+      <div class="row2"><div class="field"><label for="dA">ID check</label><select id="dA">${ageOpts(d.age)}</select></div>
+        <label class="check" style="align-self:end"><input type="checkbox" id="dE" ${d.ebt ? 'checked' : ''}> EBT eligible</label></div>
+      <div class="err" id="merr"></div>
+      <div class="m-actions">${orig ? '<button class="k redline" data-m="del">Delete</button>' : ''}<button class="k" data-m="cancel">Cancel</button><button class="k primary" data-m="save">Save</button></div>`,
+    enter: 'save',
+    actions: {
+      cancel: closeModal,
+      del: () => choose({ title: 'Delete department?', body: `<p><b>${esc(orig.n)}</b> will be removed from the register.</p>`,
+        buttons: [{ label: 'Keep' }, { label: 'Delete', cls: 'danger', run: () => { cfg().depts.splice(cfg().depts.indexOf(orig), 1); audit('dept.delete', orig.n, aUser); save(); renderAdmin(); } }] }),
+      save: () => {
+        const n = $('#dN').value.trim(); if (!n) return modalErr('Enter a name.');
+        const next = { n, g: $('#dG').value, tax: $('#dT').value, age: +$('#dA').value || 0, ebt: $('#dE').checked ? 1 : 0 };
+        if (orig) { Object.assign(orig, next); audit('dept.edit', n, aUser); } else { cfg().depts.push({ id: 'd' + uid(), ...next }); audit('dept.create', n, aUser); }
+        save(); closeModal(); renderAdmin(); toast('Department saved.');
+      },
+    },
+  });
+}
+
+/* ----- Touch groups ----- */
+function aGroups() {
+  const g = cfg().cats;
+  return `<div class="a-head"><div><h2>Touch Groups</h2><p>The tabs on the register's Touch Items screen. Favorites is always first.</p></div>
+      <div class="tools"><button class="k primary" data-a="addGroup">+ Add group</button></div></div>
+    <div class="card-box"><table class="dt"><thead><tr><th>Group</th><th class="r">Items</th><th class="r">Order</th><th></th></tr></thead><tbody>
+      ${g.map((x, i) => { const n = catalog().filter(p => p.cat === x.id).length; return `<tr><td><b>${esc(x.n)}</b></td><td class="r">${n}</td>
+        <td class="r"><button class="k sm" data-a="gMove" data-i="${i}" data-d="-1" ${i ? '' : 'disabled'} aria-label="Move up">▲</button> <button class="k sm" data-a="gMove" data-i="${i}" data-d="1" ${i < g.length - 1 ? '' : 'disabled'} aria-label="Move down">▼</button></td>
+        <td class="r"><button class="k sm" data-a="renGroup" data-i="${i}">Rename</button> <button class="k sm redline" data-a="delGroup" data-i="${i}" ${n ? 'disabled title="Move its items to another group first"' : ''}>Delete</button></td></tr>`; }).join('')}</tbody></table></div>
+    <p class="muted">A group can be deleted once it has no items.</p>`;
+}
+function groupForm(orig) {
+  openModal({
+    title: orig ? 'Rename group' : 'Add group',
+    body: `<div class="field"><label for="gN">Group name</label><input id="gN" value="${esc(orig ? orig.n : '')}" maxlength="20" autofocus></div><div class="err" id="merr"></div>
+      <div class="m-actions"><button class="k" data-m="cancel">Cancel</button><button class="k primary" data-m="save">Save</button></div>`,
+    enter: 'save',
+    actions: { cancel: closeModal, save: () => {
+      const n = $('#gN').value.trim(); if (!n) return modalErr('Enter a name.');
+      if (orig) { audit('group.rename', `${orig.n} → ${n}`, aUser); orig.n = n; } else { cfg().cats.push({ id: 'g' + uid(), n }); audit('group.create', n, aUser); }
+      save(); closeModal(); renderAdmin();
+    } },
+  });
+}
+
+/* ----- Tax ----- */
+function aTax() {
+  const used = id => cfg().items.filter(p => p.tax === id).length + cfg().depts.filter(d => d.tax === id).length;
+  return `<div class="a-head"><div><h2>Tax Rates</h2><p>Every item and department uses one of these. Changes apply to the next sale.</p></div>
+      <div class="tools"><button class="k" data-a="addTax">+ Add tax type</button><button class="k primary" data-a="saveTax">Save rates</button></div></div>
+    <div class="callout warn">These start as <b>test numbers</b>. Enter the real combined state + parish rate for this store before going live. Your accountant can confirm them.</div>
+    <div class="card-box"><table class="dt"><thead><tr><th>Tax type</th><th class="r">Rate (%)</th><th class="r">Used by</th></tr></thead><tbody>
+      ${Object.entries(cfg().tax).map(([id, t]) => `<tr><td><input class="cell" id="tn-${id}" value="${esc(t.name)}" maxlength="24"></td><td class="r"><input class="cell r" id="tr-${id}" inputmode="decimal" value="${t.rate}" style="max-width:110px"></td><td class="r">${used(id)} items/depts</td></tr>`).join('')}
+    </tbody></table></div><div class="err" id="taxErr"></div>`;
+}
+function saveTax() {
+  const next = {};
+  for (const [id] of Object.entries(cfg().tax)) {
+    const n = $('#tn-' + id).value.trim(), r = parseFloat($('#tr-' + id).value);
+    if (!n) { $('#taxErr').textContent = 'Every tax type needs a name.'; return; }
+    if (!Number.isFinite(r) || r < 0 || r > 30) { $('#taxErr').textContent = `"${n}" needs a rate between 0 and 30.`; return; }
+    next[id] = { name: n, rate: Math.round(r * 1000) / 1000 };
+  }
+  const changes = Object.entries(next).filter(([id, t]) => t.rate !== cfg().tax[id].rate).map(([id, t]) => `${t.name} ${cfg().tax[id].rate}% → ${t.rate}%`);
+  cfg().tax = next; audit('tax.change', changes.join(', ') || 'Names updated', aUser); save(); renderAdmin(); toast('Tax rates saved.');
+}
+
+/* ----- Employees ----- */
+function aStaff() {
+  return `<div class="a-head"><div><h2>Employees</h2><p>Each person signs in with their own PIN. Everything they do is in the Activity Log.</p></div>
+      <div class="tools"><button class="k primary" data-a="addStaff">+ Add employee</button></div></div>
+    <div class="card-box"><table class="dt"><thead><tr><th>Name</th><th>Role</th><th>PIN</th><th></th></tr></thead><tbody>
+      ${cfg().users.map((u, i) => `<tr><td><b>${esc(u.name)}</b></td><td>${ROLES[u.role].name}</td><td class="mono">${'•'.repeat(u.pin.length)}</td><td class="r"><button class="k sm" data-a="editStaff" data-i="${i}">Edit</button></td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="card-box"><table class="dt"><thead><tr><th>Role</th><th>Can do</th></tr></thead><tbody>
+      <tr><td>Cashier</td><td>Ring sales, take payments, hold tickets, cash drops</td></tr>
+      <tr><td>Manager</td><td>Also voids, refunds, discounts, price changes, paid outs, end of day, items and departments in Back Office</td></tr>
+      <tr><td>Owner</td><td>Everything, including tax rates, employees, store info and backups</td></tr></tbody></table></div>`;
+}
+function staffForm(orig) {
+  const u = orig || { name: '', role: 'cashier', pin: '' };
+  openModal({
+    title: orig ? 'Edit employee' : 'Add employee',
+    body: `<div class="field"><label for="sN">Name</label><input id="sN" value="${esc(u.name)}" maxlength="24" autofocus></div>
+      <div class="row2"><div class="field"><label for="sR">Role</label><select id="sR">${opt(Object.entries(ROLES).map(([k, r]) => [k, r.name]), u.role)}</select></div>
+        <div class="field"><label for="sP">PIN (4 to 8 digits)</label><input id="sP" inputmode="numeric" maxlength="8" value="${esc(u.pin)}" autocomplete="off"></div></div>
+      <div class="err" id="merr"></div>
+      <div class="m-actions">${orig ? '<button class="k redline" data-m="del">Remove</button>' : ''}<button class="k" data-m="cancel">Cancel</button><button class="k primary" data-m="save">Save</button></div>`,
+    enter: 'save',
+    actions: {
+      cancel: closeModal,
+      del: () => {
+        if (orig.role === 'admin' && cfg().users.filter(x => x.role === 'admin').length === 1) return modalErr('This is the only owner. Add another owner first.');
+        if (orig.id === aUser.id) return modalErr("You can't remove yourself while signed in.");
+        cfg().users.splice(cfg().users.indexOf(orig), 1); audit('employee.remove', orig.name, aUser); save(); closeModal(); renderAdmin();
+      },
+      save: () => {
+        const name = $('#sN').value.trim(), role = $('#sR').value, pin = $('#sP').value.trim();
+        if (!name) return modalErr('Enter a name.');
+        if (!/^\d{4,8}$/.test(pin)) return modalErr('PIN must be 4 to 8 digits.');
+        if (cfg().users.some(x => x.pin === pin && x !== orig)) return modalErr('Another employee already uses that PIN.');
+        if (orig && orig.role === 'admin' && role !== 'admin' && cfg().users.filter(x => x.role === 'admin').length === 1) return modalErr('Keep at least one owner.');
+        if (orig) { audit('employee.edit', `${name}${orig.role !== role ? ` role ${ROLES[orig.role].name} → ${ROLES[role].name}` : ''}${orig.pin !== pin ? ' PIN changed' : ''}`, aUser); Object.assign(orig, { name, role, pin }); }
+        else { cfg().users.push({ id: 'u' + uid(), name, role, pin }); audit('employee.add', `${name} (${ROLES[role].name})`, aUser); }
+        save(); closeModal(); renderAdmin(); toast('Employee saved.');
+      },
+    },
+  });
+}
+
+/* ----- Store ----- */
+function aStore() {
+  return `<div class="a-head"><div><h2>Store & Receipt</h2><p>What prints at the top and bottom of every receipt.</p></div>
+      <div class="tools"><button class="k primary" data-a="saveStore">Save</button></div></div>
+    <div class="card-box pad16"><div class="row2"><div class="field"><label for="stN">Store name on receipt</label><input id="stN" value="${esc(cfg().storeName)}" maxlength="40"></div>
+      <div class="field"><label for="stF">Receipt footer</label><input id="stF" value="${esc(cfg().footer)}" maxlength="40"></div></div></div>
+    <div class="card-box"><table class="dt"><thead><tr><th>Location</th><th>Address</th><th>Phone</th></tr></thead><tbody>
+      ${Object.entries(STORES).map(([k, s]) => `<tr><td><b>${esc(s.town)}</b>${k === S.store ? ' <i class="tag ebt">This register</i>' : ''}</td><td>${esc(s.addr)}, ${esc(s.city)}</td><td>${esc(s.phone)}</td></tr>`).join('')}</tbody></table></div>
+    <p class="muted">To move this register to another store or number, use Commands → Register Setup.</p>`;
+}
+
+/* ----- Backup ----- */
+function aBackup() {
+  return `<div class="a-head"><div><h2>Backup</h2><p>Everything is saved on this computer. Make a backup file to keep a copy or move it to another register.</p></div></div>
+    <div class="two">
+      <div class="card-box pad16"><h3>Save a backup</h3><p class="muted">Downloads one file with items, departments, tax, employees, sales and the activity log.</p><button class="k primary" data-a="export">Download backup</button></div>
+      <div class="card-box pad16"><h3>Load a backup</h3><p class="muted">Replaces everything on this computer with the backup file.</p><button class="k" data-a="import">Choose backup file</button><input type="file" id="impFile" accept=".json,application/json" hidden></div>
+    </div>
+    <div class="card-box pad16"><h3>Start setup over</h3><p class="muted">Puts items, departments, groups, tax and employees back to the samples. Sales stay.</p><button class="k redline" data-a="resetSetup">Reset setup to samples</button></div>`;
+}
+function doImport(file) {
+  const r = new FileReader();
+  r.onload = () => {
+    let data; try { data = JSON.parse(r.result); } catch (e) { return toast('That file is not a Buddy’s backup.'); }
+    if (!data || !data.config || !Array.isArray(data.config.items)) return toast('That file is not a Buddy’s backup.');
+    choose({ title: 'Load this backup?', body: `<p>${data.config.items.length} items, ${(data.sales || []).length} sales. Everything on this computer will be replaced.</p>`,
+      buttons: [{ label: 'Cancel' }, { label: 'Load backup', cls: 'danger', run: () => { S = Object.assign(fresh(), data); save(); closeAdmin(); signOut(true); toast('Backup loaded. Sign in again.'); } }] });
+  };
+  r.readAsText(file);
+}
+
+const ADM = {
+  close: closeAdmin,
+  tab: el => { aTab = el.dataset.t; renderAdmin(); },
+  addItem: () => itemForm(null),
+  editItem: el => { const p = findCode(el.dataset.c); if (p) itemForm(p); },
+  bulk: bulkPrice,
+  addDept: () => deptForm(null),
+  editDept: el => deptForm(cfg().depts[+el.dataset.i]),
+  dMove: el => { const a = cfg().depts, i = +el.dataset.i, j = i + +el.dataset.d; [a[i], a[j]] = [a[j], a[i]]; save(); renderAdmin(); },
+  addGroup: () => groupForm(null),
+  renGroup: el => groupForm(cfg().cats[+el.dataset.i]),
+  gMove: el => { const a = cfg().cats, i = +el.dataset.i, j = i + +el.dataset.d; [a[i], a[j]] = [a[j], a[i]]; save(); renderAdmin(); },
+  delGroup: el => { const g = cfg().cats[+el.dataset.i]; cfg().cats.splice(+el.dataset.i, 1); if (itemCat === g.id) itemCat = 'quick'; audit('group.delete', g.n, aUser); save(); renderAdmin(); },
+  addTax: () => openModal({ title: 'Add tax type',
+    body: `<div class="row2"><div class="field"><label for="xN">Name</label><input id="xN" maxlength="24" autofocus></div><div class="field"><label for="xR">Rate (%)</label><input id="xR" inputmode="decimal"></div></div><div class="err" id="merr"></div>
+      <div class="m-actions"><button class="k" data-m="cancel">Cancel</button><button class="k primary" data-m="save">Add</button></div>`,
+    enter: 'save', actions: { cancel: closeModal, save: () => { const n = $('#xN').value.trim(), r = parseFloat($('#xR').value); if (!n) return modalErr('Enter a name.'); if (!Number.isFinite(r) || r < 0 || r > 30) return modalErr('Enter a rate between 0 and 30.'); cfg().tax['t' + uid()] = { name: n, rate: r }; audit('tax.add', `${n} ${r}%`, aUser); save(); closeModal(); renderAdmin(); } } }),
+  saveTax,
+  addStaff: () => staffForm(null),
+  editStaff: el => staffForm(cfg().users[+el.dataset.i]),
+  saveStore: () => { const n = $('#stN').value.trim(), f = $('#stF').value.trim(); if (!n) return toast('Enter the store name.'); cfg().storeName = n; cfg().footer = f; audit('store.edit', `${n} / ${f}`, aUser); save(); renderAdmin(); toast('Saved.'); },
+  export: () => {
+    const blob = new Blob([JSON.stringify(S, null, 1)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `buddys-pos-backup-${localDay(Date.now())}.json`;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    audit('backup.export', 'Backup downloaded', aUser); toast('Backup file downloaded.');
+  },
+  import: () => $('#impFile').click(),
+  resetSetup: () => choose({ title: 'Reset setup to samples?', body: '<p>Items, departments, groups, tax and employees go back to the samples. Sales stay.</p>',
+    buttons: [{ label: 'Keep my setup' }, { label: 'Reset', cls: 'danger', run: () => { S.config = DEFAULTS(); audit('setup.reset', 'Setup reset to samples', aUser); save(); closeAdmin(); signOut(true); } }] }),
+};
+
+/* ================= sign in / out ================= */
+function showLock() {
+  makePad('lock', 'pin', '');
+  const s = loc();
+  $('#lock').innerHTML = `<div class="lock-card"><div><div class="store">${esc(cfg().storeName)}</div><div class="muted">${esc(s.town)} · Register ${regNo()}</div></div>
+    <div class="lbl2">Enter your PIN</div>${padBox('lock')}<div class="err" id="lockErr"></div>${keypad('lock')}
+    <button class="k primary" style="min-height:60px;font-size:24px" data-act="signIn">SIGN IN</button>
+    <p class="hint">${cloudOn() ? 'Use your PIN from Back Office → Employees.' : 'Test PINs: 1111 cashier · 2222 manager · 9999 owner'}</p></div>`;
+  $('#lock').hidden = false;
+}
+function signIn() {
+  const u = userByPin(pads.lock.d);
+  if (!u) { pads.lock.d = ''; drawPad('lock'); $('#lockErr').textContent = 'PIN not recognized.'; return; }
+  user = u; delete pads.lock; $('#lock').hidden = true; audit('sign.in', `${u.name} signed in`); render();
+  if (!drawer()) startDrawer();
+}
+function signOut(force) {
+  if (!force && (cart.lines.length || payments.length)) return toast('Finish, hold or void the ticket first.');
+  if (user) audit('sign.out', `${user.name} signed out`);
+  user = null; cart = newCart(); payments = []; selected = null; mode = 'sell'; buf = ''; qty = 1;
+  $('#overlay').hidden = true; modalCfg = null; render(); showLock();
+}
+
+/* ================= actions ================= */
+const ACT = {
+  signIn,
+  tab: el => { tab = el.dataset.tab; renderArea(); renderTop(); },
+  icat: el => { itemCat = el.dataset.cat; renderArea(); },
+  dept: el => addDept(cfg().depts.find(d => d.id === el.dataset.id)),
+  item: el => { const p = findCode(el.dataset.code); if (p) addItem(p); },
+  select: el => { selected = el.dataset.lid; renderTicket(); },
+  cmd: el => CMD[el.dataset.cmd] && CMD[el.dataset.cmd](),
+  void: voidLine,
+  lastReceipt: () => lastSale ? showReceipt(lastSale) : lookup(),
+  hold, recall,
+  customer: () => toast('Customer accounts and loyalty come in a later phase.'),
+  openDrawer: () => requirePerm('drawer.no_sale', 'Open drawer (no sale)', ap => { const d = drawer(); if (d) d.noSales++; audit('drawer.no_sale', 'Drawer opened, no sale', ap); save(); hwDrawer(); toast('Drawer opened · logged as No Sale.'); }),
+  allDiscount: () => requirePerm('discount', 'All discount', ap => discountModal('sale', ap)),
+  exit: () => signOut(),
+  pay: startPay,
+  cancelPay: () => { if (payments.length) return; mode = 'sell'; buf = ''; render(); },
+  cashQuick: el => payCash(+el.dataset.v),
+  tenderCash: () => payCash(parseInt(buf || '0', 10) || calc().balance),
+  tenderCard: () => cardPay(),
+  tenderEbt: ebtPay,
+  undoPay: el => requirePerm('void.sale', 'Removing a payment', ap => {
+    const p = payments.splice(+el.dataset.i, 1)[0]; audit('payment.remove', `${payLabel(p)} ${money(p.amount)}`, ap);
+    toast(p.type === 'cash' ? `Give back ${money(p.tendered)} cash.` : 'Void it on the card terminal too.'); render();
+  }),
+};
+
+document.addEventListener('click', e => {
+  const k = e.target.closest('[data-k]');
+  if (k && k.closest('[data-pad]')) { padPress(k.closest('[data-pad]').dataset.pad, k.dataset.k); return; }
+  const m = e.target.closest('[data-m]');
+  if (m && modalCfg && m.closest('#modal')) { if (!m.disabled && modalCfg.actions[m.dataset.m]) modalCfg.actions[m.dataset.m](m); return; }
+  if (e.target === $('#overlay') && modalCfg && modalCfg.closable) { closeModal(); return; }
+  const ad = e.target.closest('[data-a]');
+  if (ad && !$('#admin').hidden) { if (!ad.disabled && ADM[ad.dataset.a]) ADM[ad.dataset.a](ad); return; }
+  const np = e.target.closest('[data-np]');
+  if (np) { npPress(np.dataset.np); return; }
+  const a = e.target.closest('[data-act]');
+  if (a && !a.disabled && ACT[a.dataset.act]) { if (!user && a.dataset.act !== 'signIn') return; ACT[a.dataset.act](a); }
+});
+document.addEventListener('input', e => {
+  if (modalCfg && modalCfg.onInput && e.target.closest('#modal')) return modalCfg.onInput(e);
+  if (e.target.id === 'aQ') { aQ = e.target.value; $('#itemRows').innerHTML = itemRows(); $('#aCount').textContent = itemList().length; }
+});
+document.addEventListener('change', e => {
+  if (e.target.id === 'aCat') { aCat = e.target.value; $('#itemRows').innerHTML = itemRows(); $('#aCount').textContent = itemList().length; }
+  else if (e.target.id === 'aDate') { aDate = e.target.value || localDay(Date.now()); renderAdmin(); }
+  else if (e.target.id === 'impFile' && e.target.files[0]) doImport(e.target.files[0]);
+});
+document.addEventListener('keydown', e => {
+  const t = e.target, inField = t.tagName === 'INPUT' || t.tagName === 'SELECT';
+  const key = e.key === 'Backspace' ? 'back' : e.key;
+  if (!$('#lock').hidden) {
+    if (/^\d$/.test(key) || key === 'back') { e.preventDefault(); padPress('lock', key); }
+    else if (key === 'Enter') { e.preventDefault(); signIn(); }
+    return;
+  }
+  if (modalCfg) {
+    if (key === 'Escape' && modalCfg.closable) { e.preventDefault(); closeModal(); return; }
+    if (key === 'Enter' && modalCfg.enter) { if (t.tagName === 'BUTTON' && t.dataset.m) return; e.preventDefault(); modalCfg.actions[modalCfg.enter](); return; }
+    if (pads.modal && !inField && (/^\d$/.test(key) || key === 'back')) { e.preventDefault(); padPress('modal', key); }
+    return;
+  }
+  if (!$('#admin').hidden) { if (key === 'Escape' && !inField) closeAdmin(); return; }
+  if (!user || inField || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (/^\d$/.test(key)) { e.preventDefault(); npPress(key); }
+  else if (key === 'back') { e.preventDefault(); npPress('back'); }
+  else if (key === 'Enter') { e.preventDefault(); npPress('E'); }
+  else if (key === 'Escape') { e.preventDefault(); npPress('C'); }
+  else if (key === '*' || key === 'x' || key === 'X') { e.preventDefault(); npPress('X'); }
+});
+
+setInterval(() => { if (user) renderStatus(); }, 1000);
+if (cloudOn() && S.cloud.raw) cloudCfg = buildCloudConfig(S.cloud.raw);
+setInterval(cloudSync, CLOUD_EVERY);
+window.addEventListener('online', cloudSync);
+if (cloudOn()) cloudSync();
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+render();
+showLock();
+})();
+</script>
+</body>
+</html>
